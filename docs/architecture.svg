@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="Inter,Arial,sans-serif" font-size="13">
+<rect width="1000" height="640" fill="#fafafa"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#555"/></marker></defs>
+<style>.b{fill:#fff;stroke:#5046e5;stroke-width:1.5;rx:10}.g{fill:#eef;stroke:#5046e5;stroke-dasharray:4 3;rx:14}.t{font-weight:600;fill:#1e1b4b}.s{fill:#555;font-size:11.5px}.l{stroke:#555;stroke-width:1.4;fill:none;marker-end:url(#a)}</style>
+<text x="500" y="32" text-anchor="middle" font-size="18" class="t">InsightForge AI architecture</text>
+<rect class="b" x="40" y="60" width="920" height="70"/>
+<text x="60" y="88" class="t">Next.js 15 frontend</text>
+<text x="60" y="110" class="s">Overview · New analysis · Plan editor · Workspace (findings, timeline, code, verification) · Datasets · Experiments · Memory · Reports · Settings · Admin</text>
+<path class="l" d="M500 130V165"/><text x="510" y="152" class="s">/api proxy (HttpOnly session cookie)</text>
+<rect class="g" x="40" y="168" width="920" height="400"/>
+<text x="60" y="192" class="t">FastAPI backend (every resource scoped to its owner; admin = account management only)</text>
+<rect class="b" x="60" y="210" width="160" height="70"/><text x="75" y="236" class="t">Upload + Profiler</text><text x="75" y="256" class="s">types, roles, issues,</text><text x="75" y="270" class="s">targets, leakage hints</text>
+<rect class="b" x="250" y="210" width="160" height="70"/><text x="265" y="236" class="t">Planner</text><text x="265" y="256" class="s">rules (+ optional free</text><text x="265" y="270" class="s">LLM) → editable plan</text>
+<rect class="b" x="440" y="210" width="180" height="70"/><text x="455" y="236" class="t">Agent engine</text><text x="455" y="256" class="s">strategy loop, diagnosis,</text><text x="455" y="270" class="s">retry budget, 4 modes</text>
+<rect class="b" x="650" y="210" width="290" height="70"/><text x="665" y="236" class="t">Sandbox</text><text x="665" y="256" class="s">AST allowlist · python -I subprocess · rlimits</text><text x="665" y="270" class="s">timeout · scrubbed env · netns · audit hook</text>
+<path class="l" d="M220 245H248"/><path class="l" d="M410 245H438"/><path class="l" d="M620 245H648"/>
+<rect class="b" x="440" y="320" width="180" height="70"/><text x="455" y="346" class="t">Verifier</text><text x="455" y="366" class="s">recompute claims from raw</text><text x="455" y="380" class="s">data, assumptions, leakage</text>
+<path class="l" d="M530 280V318"/>
+<rect class="b" x="650" y="320" width="290" height="70"/><text x="665" y="346" class="t">Experience memory</text><text x="665" y="366" class="s">candidate → validated (≥2 verified, ≥2 datasets,</text><text x="665" y="380" class="s">&lt;25% contradictions) · versions · usage log</text>
+<path class="l" d="M620 355H648"/><path class="l" d="M795 320C795 300 600 300 590 282"/>
+<rect class="b" x="250" y="320" width="160" height="70"/><text x="265" y="346" class="t">Report composer</text><text x="265" y="366" class="s">deterministic summary;</text><text x="265" y="380" class="s">LLM text number-checked</text>
+<path class="l" d="M440 355H412"/>
+<rect class="b" x="60" y="320" width="160" height="70"/><text x="75" y="346" class="t">Exports</text><text x="75" y="366" class="s">PDF · CSV zip · code zip</text>
+<path class="l" d="M250 355H222"/>
+<rect class="b" x="250" y="430" width="370" height="70"/><text x="265" y="456" class="t">Evaluation harness</text><text x="265" y="476" class="s">synthetic task families with ground truth · train then test</text><text x="265" y="490" class="s">isolated memory per mode · paired bootstrap 95% CI</text>
+<path class="l" d="M530 430V392"/>
+<rect class="b" x="650" y="430" width="290" height="70"/><text x="665" y="456" class="t">Auth</text><text x="665" y="476" class="s">scrypt hashes · hashed session tokens</text><text x="665" y="490" class="s">rate-limited login · memory namespace per user</text>
+<rect class="b" x="60" y="430" width="160" height="70"/><text x="75" y="456" class="t">Background jobs</text><text x="75" y="476" class="s">thread pool · stuck-job</text><text x="75" y="490" class="s">recovery · retention</text>
+<rect class="b" x="40" y="590" width="440" height="36"/><text x="60" y="613" class="t">SQLite (default) or PostgreSQL</text>
+<rect class="b" x="520" y="590" width="440" height="36"/><text x="540" y="613" class="t">File store: uploads/ · runs/ (code, logs, results)</text>
+<path class="l" d="M260 568V588"/><path class="l" d="M740 568V588"/>
+</svg>

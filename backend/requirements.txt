@@ -1,0 +1,19 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.7
+SQLAlchemy>=2.0
+pandas>=2.2
+numpy>=1.26
+scipy>=1.13
+statsmodels>=0.14
+scikit-learn>=1.5
+openpyxl>=3.1
+reportlab>=4.0
+httpx>=0.27
+# optional: PostgreSQL
+psycopg[binary]>=3.1
+# optional: Anthropic provider (paid; not needed for the free default)
+# anthropic>=0.40
+# tests
+pytest>=8

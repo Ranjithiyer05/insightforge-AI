@@ -1,13 +1,9 @@
 /** @type {import('next').NextConfig} */
-const backend = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  // The browser only talks to this Next.js server; API calls are proxied to FastAPI,
-  // so no backend secrets or URLs need to be exposed to the client.
-  async rewrites() {
-    return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];
-  },
+  // API calls are proxied to FastAPI by src/app/api/[...path]/route.ts, which reads
+  // BACKEND_URL at runtime, so the same build works on any host.
   async headers() {
     return [{
       source: "/(.*)",

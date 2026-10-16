@@ -105,6 +105,23 @@ On skewed small samples, validated memory switched from Welch's t-test to Mann-W
 
 ## Free deployment
 
+### One click (Render, free plan)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Ranjithiyer05/insightforge-ai)
+
+1. Click the button and sign in to Render with GitHub. No card is needed for free services.
+2. Render reads `render.yaml` and creates two free services, `insightforge-api` and `insightforge-web`. It asks for these values:
+   - `ADMIN_EMAILS`: your email.
+   - `DATABASE_URL`: optional, but recommended. Paste a free Neon Postgres URL so accounts survive restarts.
+   - `CORS_ORIGINS` and `BACKEND_URL`: leave them blank for now.
+3. When `insightforge-api` is live, copy its URL (for example `https://insightforge-api.onrender.com`). Set it as `BACKEND_URL` on `insightforge-web`, and set the web URL as `CORS_ORIGINS` on the API. Both services redeploy automatically.
+4. Open the web URL and register. The first account becomes the admin.
+
+Keys are entered only in the Render dashboard and are never stored in the repo.
+
+### Other free options
+
+
 Everything below has a free tier. Set spending limits or "no card on file" wherever a provider asks. Keep `LLM_PROVIDER=none` or use Ollama to guarantee zero LLM cost.
 
 | Part | Free option | Notes |

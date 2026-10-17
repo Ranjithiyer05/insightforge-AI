@@ -11,7 +11,7 @@ import { fmtNum } from "@/lib/utils";
 export type ChartSpec = {
   id: string; kind: string; title: string; data: any[]; x: string; series: { key: string; label?: string }[];
   unit?: string; layout?: string; highlight?: string[]; error?: [string, string]; band?: [string, string];
-  x_label?: string; y_label?: string; diagonal?: boolean; group?: string;
+  x_label?: string; y_label?: string; diagonal?: boolean; group?: string; band_label?: string;
 };
 
 const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
@@ -94,7 +94,9 @@ export function ChartRenderer({ spec, height = 280 }: { spec: ChartSpec; height?
       </ScatterChart>
     );
   } else if (spec.kind === "forecast") {
-    const data = spec.data.map((r) => ({ ...r, __band: r.lower !== undefined ? [r.lower, r.upper] : undefined }));
+    const [lo, hi] = spec.band || ["lower", "upper"];
+    const data = spec.data.map((r) => ({ ...r, __band: r[lo] !== undefined && r[lo] !== null ? [r[lo], r[hi]] : undefined }));
+    const hasHoldout = spec.data.some((r) => r.holdout_prediction !== undefined);
     chart = (
       <ComposedChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -102,9 +104,9 @@ export function ChartRenderer({ spec, height = 280 }: { spec: ChartSpec; height?
         <YAxis {...axis} tickFormatter={fmt} width={64} />
         <Tooltip content={<TooltipBox />} />
         <Legend iconType="circle" iconSize={8} />
-        <Area dataKey="__band" name="95% interval" stroke="none" fill="var(--chart-1)" fillOpacity={0.12} />
+        <Area dataKey="__band" name={spec.band_label || "95% interval"} stroke="none" fill="var(--chart-1)" fillOpacity={0.12} />
         <Line dataKey="actual" name="Actual" stroke="var(--chart-5)" strokeWidth={2} dot={false} />
-        <Line dataKey="holdout_prediction" name="Holdout prediction" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2 }} />
+        {hasHoldout && <Line dataKey="holdout_prediction" name="Holdout prediction" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="4 3" dot={{ r: 2 }} />}
         <Line dataKey="forecast" name="Forecast" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 2 }} />
       </ComposedChart>
     );

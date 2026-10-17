@@ -248,6 +248,34 @@ class ModelRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Dashboard(Base):
+    """A saved board of tiles. Each tile is a validated Ask spec re-run on the latest version of its dataset."""
+    __tablename__ = "dashboards"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("db"))
+    owner_id: Mapped[str] = mapped_column(String(32), index=True)
+    project_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    tiles: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MonitorEvent(Base):
+    """One evaluation of a KPI tile's rule against real data. Alerts are only ever created from these."""
+    __tablename__ = "monitor_events"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("me"))
+    owner_id: Mapped[str] = mapped_column(String(32), index=True)
+    dashboard_id: Mapped[str] = mapped_column(ForeignKey("dashboards.id", ondelete="CASCADE"), index=True)
+    tile_id: Mapped[str] = mapped_column(String(32))
+    dataset_id: Mapped[str] = mapped_column(String(32))
+    dataset_sha: Mapped[str] = mapped_column(String(64))
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(16))  # ok | breach | error
+    message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class DatasetBlob(Base):
     """Compressed copy of a dataset file, so uploads survive restarts on hosts whose disk is wiped."""
     __tablename__ = "dataset_blobs"

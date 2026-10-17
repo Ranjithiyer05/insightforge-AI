@@ -47,7 +47,32 @@ function SpecEditor({ spec, schema, onRun, busy }: { spec: any; schema: any; onR
   );
 }
 
-function Answer({ a, schema, onRun, busy }: { a: any; schema: any; onRun: (s: any) => void; busy: boolean }) {
+function AddToDashboard({ a, datasetId }: { a: any; datasetId: string }) {
+  const boards = useApi<any[]>("/dashboards");
+  const [msg, setMsg] = useState<string | null>(null);
+  const scalar = a.rows.length === 1 && a.columns.length === 1;
+  async function add(id: string) {
+    let bid = id;
+    try {
+      if (id === "new") bid = (await api("/dashboards", { method: "POST", json: { name: "My dashboard", dataset_id: datasetId } })).id;
+      await api(`/dashboards/${bid}/tiles`, { method: "POST", json: { kind: scalar ? "kpi" : "ask", title: a.question || a.interpretation, question: a.question, spec: a.spec } });
+      setMsg(bid);
+    } catch (e: any) { setMsg(`error:${e.message}`); }
+  }
+  if (msg && !msg.startsWith("error:")) return <a href={`/dashboards/${msg}`} className="text-[12px] text-accent-text hover:underline">Added. Open dashboard</a>;
+  return (
+    <span className="flex items-center gap-1.5">
+      <Select className="h-8 w-48 text-[12px]" value="" onChange={(e) => e.target.value && add(e.target.value)} aria-label="Add to dashboard">
+        <option value="">Add to dashboard…</option>
+        {boards.data?.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        <option value="new">New dashboard</option>
+      </Select>
+      {msg?.startsWith("error:") && <span className="text-[12px] text-danger">{msg.slice(6)}</span>}
+    </span>
+  );
+}
+
+function Answer({ a, schema, onRun, busy, datasetId }: { a: any; schema: any; onRun: (s: any) => void; busy: boolean; datasetId: string }) {
   const [view, setView] = useState<"chart" | "table" | "code">(a.chart ? "chart" : "table");
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -60,6 +85,7 @@ function Answer({ a, schema, onRun, busy }: { a: any; schema: any; onRun: (s: an
               <Badge tone="outline">Computed: {a.interpretation}</Badge>
               <span className="num">{a.rows_used.toLocaleString()} of {a.rows_total.toLocaleString()} rows used</span>
               {a.parser === "llm" && <Badge tone="outline"><Sparkles className="size-3" /> Interpreted by the language model</Badge>}
+              <span className="ml-auto"><AddToDashboard a={a} datasetId={datasetId} /></span>
             </div>
           </div>
         </CardHeader>
@@ -121,7 +147,7 @@ export function AskData({ datasetId }: { datasetId: string }) {
         </Card>
         {err && <ErrorNote message={err} />}
         {busy && <Skeleton className="h-40" />}
-        {answers.map((a) => <Answer key={a.id} a={a} schema={a.schema} onRun={(spec) => run({ spec })} busy={busy} />)}
+        {answers.map((a) => <Answer key={a.id} a={a} schema={a.schema} onRun={(spec) => run({ spec })} busy={busy} datasetId={datasetId} />)}
         {!answers.length && !busy && <Card className="p-8 text-center text-[13px] text-fg-3">Ask a question or pick a suggestion. Each answer shows how it was computed, so you can check and correct it.</Card>}
       </div>
       <Card className="h-fit">

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   BarChart3, Beaker, BrainCircuit, ChevronsLeft, ChevronsRight, Database, FileText, History, LayoutDashboard, LogOut, Menu, Moon,
-  PlusCircle, Columns2, Search, Settings, Shield, Sun, Monitor, Cpu, Sparkles, X, FolderKanban,
+  PlusCircle, Columns2, Search, Settings, Shield, Sun, Monitor, Cpu, Sparkles, X, FolderKanban, LayoutGrid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -24,6 +24,7 @@ const NAV_GROUPS = [
     { href: "/datasets", label: "My Datasets", icon: Database },
     { href: "/analyses", label: "Analysis History", icon: History },
     { href: "/reports", label: "Reports", icon: FileText },
+    { href: "/dashboards", label: "Dashboards", icon: LayoutGrid },
     { href: "/compare", label: "Compare", icon: Columns2 },
   ] },
   { label: "Learning", items: [

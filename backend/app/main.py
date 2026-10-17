@@ -21,7 +21,7 @@ from .auth import admin_user, current_user, memory_namespace
 from .agent import MODES, execute_analysis
 from .analyses import REGISTRY
 from .config import settings
-from .db import AskQuery, ModelRun, DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
+from .db import AskQuery, Dashboard, ModelRun, MonitorEvent, DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
 from .evaluation import execute_evaluation
 from .profiler import apply_cleaning, preview_rows, profile_dataframe
 from .sandbox.executor import netns_available
@@ -624,6 +624,257 @@ def dataset_report(did: str, format: str = Query("html", pattern="^(html|pdf)$")
     if format == "pdf":
         return Response(reports.build_dataset_pdf(sec, stamp), media_type="application/pdf", headers={"content-disposition": f'attachment; filename="{safe}_report.pdf"'})
     return Response(reports.build_dataset_html(sec, stamp), media_type="text/html; charset=utf-8", headers={"content-disposition": f'attachment; filename="{safe}_report.html"'})
+
+
+_pattern_cache: dict[str, Any] = {}
+
+
+@app.get("/api/datasets/{did}/patterns/{kind}")
+def dataset_patterns(did: str, kind: str, request: Request, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Anomalies, forecast or segments, computed from the stored file and cached per dataset version and parameters."""
+    from . import patterns as pt
+    d = get_or_404(db, Dataset, did, user)
+    q = dict(request.query_params)
+    key = f"{did}:{d.sha256}:{kind}:{sorted(q.items())}"
+    if key in _pattern_cache:
+        return _pattern_cache[key]
+    df, prof = storage.load_dataset(did), d.profile or {}
+    cols = [c for c in q.get("columns", "").split(",") if c] or None
+    try:
+        if kind == "anomalies":
+            out = pt.anomalies(df, prof, cols, contamination=min(0.1, max(0.001, float(q.get("contamination", 0.01)))))
+        elif kind == "forecast":
+            h = q.get("horizon")
+            out = pt.forecast(df, prof, q.get("date_col") or None, q.get("measure") if "measure" in q else None, q.get("grain", "month"),
+                              q.get("agg", "sum") if q.get("agg") in ("sum", "mean", "count") else "sum", int(h) if h else None)
+        elif kind == "segments":
+            k = q.get("k")
+            out = pt.segments(df, prof, cols, int(k) if k else None)
+        else:
+            raise HTTPException(404, "Unknown pattern type.")
+    except pt.PatternError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422, f"Invalid parameter: {exc}") from None
+    if len(_pattern_cache) > 32:
+        _pattern_cache.pop(next(iter(_pattern_cache)))
+    _pattern_cache[key] = out
+    return out
+
+
+@app.post("/api/datasets/{did}/versions")
+def upload_version(did: str, file: UploadFile = File(...), sheet: str | None = Form(None), db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Upload newer data for the same dataset (e.g. next month's export). Dashboards and monitors follow the latest version."""
+    from .dashboards import version_chain
+    parent = get_or_404(db, Dataset, did, user)
+    limit = settings.max_upload_mb * 1024 * 1024
+    raw = file.file.read(limit + 1)
+    if len(raw) > limit:
+        raise HTTPException(413, f"File is larger than the {settings.max_upload_mb} MB limit.")
+    if not raw:
+        raise HTTPException(400, "The file is empty.")
+    try:
+        kind = storage.detect_type(file.filename or "", raw[:8192])
+        df = storage.parse_bytes(raw, kind, sheet if sheet else 0)
+    except storage.UploadError as exc:
+        raise HTTPException(400, str(exc)) from None
+    chain = version_chain(db, parent)
+    latest = chain[-1]
+    base = parent.name.split(" (cleaned")[0].split(" (version")[0]
+    d = _create_dataset(db, user, raw, file.filename or "dataset.csv", kind, df, parent.project_id, synthetic=False, name=f"{base} (version {len(chain) + 1})")
+    d.parent_id = latest.id
+    old, new = set(latest.profile["columns"][i]["name"] for i in range(len(latest.profile["columns"]))), set(map(str, df.columns))
+    d.cleaning_log = []
+    db.commit()
+    out = ds_dict(d, with_profile=True)
+    out["schema_changes"] = {"added": sorted(new - old), "removed": sorted(old - new)}
+    return out
+
+
+@app.get("/api/datasets/{did}/pipeline")
+def dataset_pipeline(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Everything derived from this dataset's lineage: versions, cleaning steps, questions, models, analyses and dashboards."""
+    from .dashboards import version_chain
+    d = get_or_404(db, Dataset, did, user)
+    chain = version_chain(db, d)
+    ids = [x.id for x in chain]
+    nodes, edges = [], []
+    for x in chain:
+        kind = "upload" if not x.parent_id else ("cleaned" if x.cleaning_log and x.cleaning_log[-1].get("from_dataset") == x.parent_id else "new_data")
+        ops = x.cleaning_log[-1]["operations"] if kind == "cleaned" else []
+        nodes.append({"id": x.id, "type": "dataset", "label": x.name, "kind": kind, "rows": x.n_rows, "cols": x.n_cols, "created_at": x.created_at,
+                      "sha256": x.sha256[:12], "steps": [o.get("label") or o.get("op") for o in ops], "current": x.id == did})
+        if x.parent_id in ids:
+            edges.append({"from": x.parent_id, "to": x.id, "label": f"{len(ops)} cleaning step(s)" if kind == "cleaned" else "new upload"})
+    for q in db.scalars(select(AskQuery).where(AskQuery.owner_id == user.id, AskQuery.dataset_id.in_(ids)).order_by(AskQuery.created_at.desc()).limit(20)):
+        nodes.append({"id": q.id, "type": "question", "label": q.question, "detail": q.headline, "created_at": q.created_at})
+        edges.append({"from": q.dataset_id, "to": q.id})
+    for m in db.scalars(select(ModelRun).where(ModelRun.owner_id == user.id, ModelRun.dataset_id.in_(ids)).order_by(ModelRun.created_at.desc()).limit(10)):
+        nodes.append({"id": m.id, "type": "model", "label": f"Predict {m.target}", "detail": m.status if m.status != "succeeded" else (m.result or {}).get("best_model", ""), "created_at": m.created_at})
+        edges.append({"from": m.dataset_id, "to": m.id})
+    for a in db.scalars(select(Analysis).where(Analysis.owner_id == user.id, Analysis.dataset_id.in_(ids)).order_by(Analysis.created_at.desc()).limit(10)):
+        nodes.append({"id": a.id, "type": "analysis", "label": a.question, "detail": a.status, "created_at": a.created_at})
+        edges.append({"from": a.dataset_id, "to": a.id})
+    for b in db.scalars(select(Dashboard).where(Dashboard.owner_id == user.id, Dashboard.dataset_id.in_(ids))):
+        nodes.append({"id": b.id, "type": "dashboard", "label": b.name, "detail": f"{len(b.tiles)} tiles, follows latest version", "created_at": b.created_at})
+        edges.append({"from": b.dataset_id, "to": b.id})
+    return {"nodes": nodes, "edges": edges, "latest": chain[-1].id}
+
+
+@app.get("/api/datasets/{did}/reproduce.zip")
+def dataset_reproduce(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """A bundle that rebuilds this dataset version from its uploaded source and re-runs saved questions, without InsightForge."""
+    import io
+    import json as _json
+    import zipfile
+    from .dashboards import version_chain
+    d = get_or_404(db, Dataset, did, user)
+    chain = version_chain(db, d)
+    # walk back to the upload this version was cleaned from
+    by_id = {x.id: x for x in chain}
+    src = d
+    while src.parent_id and src.cleaning_log and src.parent_id in by_id:
+        src = by_id[src.parent_id]
+    recipe = [{"op": o["op"], **({"column": o["column"]} if o.get("column") else {}), **(o.get("params") or {}), "reason": o.get("reason") or ""}
+              for h in (d.cleaning_log or []) for o in h.get("operations", [])]
+    cleaning_src = (Path(__file__).parent / "cleaning.py").read_text().replace(
+        "from .profiler import _finite",
+        "import math\n\n\ndef _finite(x):\n    if isinstance(x, (float, np.floating)):\n        return None if (math.isnan(x) or math.isinf(x)) else float(x)\n"
+        "    if isinstance(x, np.integer):\n        return int(x)\n    return x")
+    replay = """\"\"\"Rebuild the cleaned dataset from the original upload.\n\nUsage: python replay.py original.csv cleaned.csv\n\"\"\"
+import json
+import sys
+
+import pandas as pd
+
+from cleaning import run_operations
+
+src, out = sys.argv[1], sys.argv[2]
+df = pd.read_csv(src, sep=None, engine="python") if src.endswith(".csv") else pd.read_excel(src)
+recipe = json.load(open("recipe.json"))
+cleaned, log = run_operations(df, recipe["operations"])
+for step in log:
+    print(f"step {step['step']}: {step['label']}  rows {step['rows_before']} -> {step['rows_after']}")
+cleaned.to_csv(out, index=False)
+print(f"wrote {out}: {len(cleaned)} rows x {cleaned.shape[1]} columns (expected {recipe['expected_rows']} x {recipe['expected_columns']})")
+"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("cleaning.py", cleaning_src)
+        z.writestr("replay.py", replay)
+        z.writestr("recipe.json", _json.dumps({"source_file": src.original_filename, "source_sha256": src.sha256, "operations": recipe,
+                                               "expected_rows": d.n_rows, "expected_columns": d.n_cols, "dataset": d.name}, indent=2, default=str))
+        qs = db.scalars(select(AskQuery).where(AskQuery.owner_id == user.id, AskQuery.dataset_id == did).order_by(AskQuery.created_at)).all()
+        from .ask import compile_pandas
+        for i, q in enumerate(qs, 1):
+            try:
+                code = compile_pandas(q.spec)
+            except Exception:  # noqa: BLE001
+                continue
+            z.writestr(f"questions/q{i:02d}.py", f"# {q.question}\n# Answer at the time: {q.headline}\nimport sys\n\nimport numpy as np\nimport pandas as pd\n\n"
+                                                 f"df = pd.read_csv(sys.argv[1])\n{code}\nprint(result.to_string())\n")
+        z.writestr("README.md", f"# Reproduce: {d.name}\n\nOriginal file: `{src.original_filename}` (SHA-256 `{src.sha256}`). The data itself is not included.\n\n"
+                   "    pip install pandas numpy openpyxl\n    python replay.py original.csv cleaned.csv\n    python questions/q01.py cleaned.csv\n\n"
+                   f"`recipe.json` lists the {len(recipe)} cleaning step(s) in order, with the reason recorded for each. `cleaning.py` is the exact code InsightForge runs.\n")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in d.name)[:60] or "dataset"
+    return Response(buf.getvalue(), media_type="application/zip", headers={"content-disposition": f'attachment; filename="{safe}_reproduce.zip"'})
+
+
+# ---------------- dashboards & monitoring ----------------
+
+class DashboardIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    dataset_id: str
+    project_id: str | None = None
+    tiles: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
+
+
+class DashboardPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    tiles: list[dict[str, Any]] | None = Field(default=None, max_length=40)
+
+
+def _board_dict(b: Dashboard) -> dict[str, Any]:
+    return {"id": b.id, "name": b.name, "dataset_id": b.dataset_id, "project_id": b.project_id, "tiles": b.tiles, "created_at": b.created_at, "updated_at": b.updated_at}
+
+
+def _valid_tiles(tiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from .ask import AskError
+    from .dashboards import clean_tile
+    try:
+        return [clean_tile(t) for t in tiles]
+    except (AskError, TypeError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.get("/api/dashboards")
+def list_dashboards(db: Session = Depends(get_session), user: User = Depends(current_user)):
+    rows = db.scalars(select(Dashboard).where(Dashboard.owner_id == user.id).order_by(Dashboard.updated_at.desc())).all()
+    names = {d.id: d.name for d in db.scalars(select(Dataset).where(Dataset.id.in_([r.dataset_id for r in rows])))}
+    return [_board_dict(r) | {"dataset_name": names.get(r.dataset_id)} for r in rows]
+
+
+@app.post("/api/dashboards")
+def create_dashboard(body: DashboardIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    d = get_or_404(db, Dataset, body.dataset_id, user)
+    if body.project_id:
+        get_or_404(db, Project, body.project_id, user)
+    b = Dashboard(owner_id=user.id, name=body.name, dataset_id=d.id, project_id=body.project_id or d.project_id, tiles=_valid_tiles(body.tiles))
+    db.add(b)
+    db.commit()
+    return _board_dict(b)
+
+
+@app.get("/api/dashboards/{bid}")
+def get_dashboard(bid: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .dashboards import render
+    b = get_or_404(db, Dashboard, bid, user)
+    return _board_dict(b) | render(db, b)
+
+
+@app.patch("/api/dashboards/{bid}")
+def update_dashboard(bid: str, body: DashboardPatch, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    b = get_or_404(db, Dashboard, bid, user)
+    if body.name is not None:
+        b.name = body.name
+    if body.tiles is not None:
+        b.tiles = _valid_tiles(body.tiles)
+    b.updated_at = utcnow()
+    db.commit()
+    return _board_dict(b)
+
+
+@app.post("/api/dashboards/{bid}/tiles")
+def add_tile(bid: str, tile: dict[str, Any], db: Session = Depends(get_session), user: User = Depends(current_user)):
+    b = get_or_404(db, Dashboard, bid, user)
+    if len(b.tiles) >= 40:
+        raise HTTPException(400, "A dashboard can hold at most 40 tiles.")
+    b.tiles = list(b.tiles) + _valid_tiles([tile])
+    b.updated_at = utcnow()
+    db.commit()
+    return _board_dict(b)
+
+
+@app.delete("/api/dashboards/{bid}")
+def delete_dashboard(bid: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    b = get_or_404(db, Dashboard, bid, user)
+    db.delete(b)
+    db.commit()
+    return {"deleted": bid}
+
+
+@app.get("/api/alerts")
+def list_alerts(db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Rule breaches recorded when a KPI tile was evaluated against a dataset version. Nothing here is simulated."""
+    evs = db.scalars(select(MonitorEvent).where(MonitorEvent.owner_id == user.id, MonitorEvent.status == "breach").order_by(MonitorEvent.created_at.desc()).limit(50)).all()
+    boards = {b.id: b for b in db.scalars(select(Dashboard).where(Dashboard.id.in_({e.dashboard_id for e in evs})))}
+    out = []
+    for e in evs:
+        b = boards.get(e.dashboard_id)
+        tile = next((t for t in (b.tiles if b else []) if t["id"] == e.tile_id), None)
+        out.append({"id": e.id, "dashboard_id": e.dashboard_id, "dashboard": b.name if b else None, "tile": (tile or {}).get("title") or (tile or {}).get("question"),
+                    "value": e.value, "message": e.message.rsplit(" [", 1)[0], "dataset_id": e.dataset_id, "created_at": e.created_at})
+    return out
 
 
 @app.delete("/api/datasets/{did}")

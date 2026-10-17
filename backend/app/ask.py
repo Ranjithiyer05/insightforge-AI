@@ -326,9 +326,17 @@ def validate(spec: dict[str, Any], schema: Schema) -> dict[str, Any]:
     for f in s["filters"] or []:
         if f.get("column") not in schema.cols or f.get("op") not in FILTER_OPS:
             raise AskError(f"Invalid filter {f!r}.")
-        filters.append({"column": f["column"], "op": f["op"], "value": f.get("value")})
+        v = f.get("value")
+        if isinstance(v, bool) or v is None or isinstance(v, (list, dict)):
+            v = str(v)
+        if isinstance(v, (int, float)) and not np.isfinite(v):
+            raise AskError("Filter values must be finite numbers.")
+        filters.append({"column": f["column"], "op": f["op"], "value": v if isinstance(v, (int, float)) else str(v)[:200]})
     s["filters"] = filters
-    s["limit"] = int(s["limit"]) if s["limit"] else None
+    try:
+        s["limit"] = int(s["limit"]) if s["limit"] else None
+    except (TypeError, ValueError):
+        raise AskError("Limit must be a whole number.") from None
     if s["limit"] is not None and not 1 <= s["limit"] <= MAX_RESULT_ROWS:
         raise AskError(f"Limit must be between 1 and {MAX_RESULT_ROWS}.")
     s["sort"] = "asc" if s["sort"] == "asc" else "desc"
@@ -468,11 +476,19 @@ def _fmt(v: Any) -> str:
     return str(v)
 
 
+def _scipy_only_import(name, *args, **kwargs):
+    if name != "scipy":
+        raise ImportError(f"import of {name} is not allowed here")
+    return __import__(name, *args, **kwargs)
+
+
 def execute(df: pd.DataFrame, s: dict[str, Any]) -> dict[str, Any]:
     code = compile_pandas(s)
     ns: dict[str, Any] = {"df": df, "pd": pd, "np": np}
+    safe_builtins = {"min": min, "max": max, "int": int, "float": float, "len": len, "str": str, "__import__": _scipy_only_import}
     with np.errstate(all="ignore"):
-        exec(compile(code, "<ask>", "exec"), {"__builtins__": __builtins__}, ns)  # code is generated from a validated spec only
+        # The code is generated from a validated spec (column names and values are repr-quoted), never from user text.
+        exec(compile(code, "<ask>", "exec"), {"__builtins__": safe_builtins}, ns)
     result: pd.DataFrame = ns["result"]
     filtered_rows = int(len(ns["d"]))
     out: dict[str, Any] = {"code": code, "sql": compile_sql(s), "rows_used": filtered_rows, "rows_total": int(len(df)),

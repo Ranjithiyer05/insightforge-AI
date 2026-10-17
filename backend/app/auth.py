@@ -65,9 +65,34 @@ def validate_credentials(email: str, password: str) -> str:
     return email
 
 
+def client_ip(request: Request) -> str:
+    """The visitor's address. Behind Render (and the Next.js proxy, which forwards headers) every request arrives from
+    a proxy, so the first X-Forwarded-For entry is used; without it, limits would be shared by all visitors."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    first = fwd.split(",")[0].strip()
+    if first:
+        return first[:64]
+    return request.client.host if request.client else "unknown"
+
+
 def _rate_key(request: Request, email: str) -> list[str]:
-    host = request.client.host if request.client else "unknown"
-    return [f"e:{email}", f"ip:{host}"]
+    if email == "guest":  # guest sign-ups are limited per visitor address, not globally
+        return [f"guest-ip:{client_ip(request)}"]
+    return [f"e:{email}", f"ip:{client_ip(request)}"]
+
+
+GUEST_GLOBAL_PER_HOUR = 200
+_guest_global: deque[float] = deque()
+
+
+def check_guest_capacity() -> None:
+    """Global ceiling on demo accounts per hour, so spoofed addresses cannot mint guests without bound."""
+    now = time.time()
+    while _guest_global and now - _guest_global[0] > 3600:
+        _guest_global.popleft()
+    if len(_guest_global) >= GUEST_GLOBAL_PER_HOUR:
+        raise HTTPException(429, "The live demo is busy right now. Create a free account instead, or try again later.")
+    _guest_global.append(now)
 
 
 def check_rate(request: Request, email: str) -> None:
@@ -77,7 +102,8 @@ def check_rate(request: Request, email: str) -> None:
         while q and now - q[0] > WINDOW_S:
             q.popleft()
         if len(q) >= MAX_FAILS:
-            raise HTTPException(429, "Too many failed sign-in attempts. Try again in a few minutes.")
+            raise HTTPException(429, "Too many demo sessions from this network. Try again in a few minutes, or create a free account."
+                                if email == "guest" else "Too many failed sign-in attempts. Try again in a few minutes.")
 
 
 def record_fail(request: Request, email: str) -> None:

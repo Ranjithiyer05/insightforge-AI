@@ -97,3 +97,16 @@ def test_ask_api_history_and_privacy():
     other.post("/api/auth/register", json={"email": "ask2@x.com", "password": "secretpass1"})
     assert other.post(f"/api/datasets/{ds['id']}/ask", json={"question": "total revenue"}).status_code == 404
     assert other.delete(f"/api/ask/{hist[0]['id']}").status_code == 404
+
+
+def test_spec_injection_is_inert():
+    df = sales()
+    prof = profile_dataframe(df)
+    evil = "x'); import os; os.system('echo pwned'); ('"
+    r = answer(df, prof, spec={"op": "aggregate", "measure": "revenue", "agg": "sum", "filters": [{"column": "region", "op": "==", "value": evil}]})
+    assert r["headline"] == "No rows match these filters." and repr(evil) in r["code"]
+    for bad in (float("nan"), float("inf")):
+        with pytest.raises(AskError):
+            answer(df, prof, spec={"op": "aggregate", "measure": "revenue", "agg": "sum", "filters": [{"column": "revenue", "op": ">", "value": bad}]})
+    with pytest.raises(AskError):
+        answer(df, prof, spec={"op": "aggregate", "measure": "revenue", "agg": "sum", "limit": "1; drop"})

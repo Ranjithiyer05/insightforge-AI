@@ -116,6 +116,22 @@ def exp_dict(e: Experiment) -> dict[str, Any]:
             "dataset_signature": e.dataset_signature, "params": e.params, "duration_ms": e.duration_ms, "cpu_s": e.cpu_s, "created_at": _iso(e.created_at)}
 
 
+_compute_hits: dict[str, list[float]] = {}
+
+
+def compute_limit(user: User, per_minute: int = 40) -> None:
+    """Per-user cap on heavy computations (ask, patterns, predictions, reports) so one account cannot starve the server."""
+    import time as _t
+    now = _t.monotonic()
+    hits = [t for t in _compute_hits.get(user.id, []) if now - t < 60]
+    if len(hits) >= per_minute:
+        raise HTTPException(429, "Too many requests in the last minute. Wait a moment and try again.")
+    hits.append(now)
+    _compute_hits[user.id] = hits
+    if len(_compute_hits) > 5000:
+        _compute_hits.clear()
+
+
 def get_or_404(db: Session, model, id_: str, user: User | None = None):
     obj = db.get(model, id_)
     if obj is None:
@@ -423,6 +439,7 @@ class AskIn(BaseModel):
 @app.post("/api/datasets/{did}/ask")
 def ask_dataset(did: str, body: AskIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
     """Answer a natural-language question with generated pandas code; the code shown is the code run."""
+    compute_limit(user)
     from .ask import AskError, answer
     d = get_or_404(db, Dataset, did, user)
     if not body.question and not body.spec:
@@ -509,7 +526,7 @@ def _run_automl(mid: str) -> None:
             db.commit()
         try:
             cfg = m.config or {}
-            max_rows = 20_000 if settings.sandbox_memory_mb <= 512 else 100_000
+            max_rows = 8_000 if settings.sandbox_memory_mb <= 512 else 100_000
             result, blob = train(storage.load_dataset(d.id), d.profile or {}, m.target, cfg.get("features"), cfg.get("task"), cfg.get("split", "random"),
                                  cfg.get("date_col"), cfg.get("positive_class"), max_rows=max_rows, progress=progress)
             m.result, m.model_bytes, m.status, m.progress = result, blob, "succeeded", "Done"
@@ -559,6 +576,7 @@ class PredictIn(BaseModel):
 
 @app.post("/api/models/{mid}/predict")
 def model_predict(mid: str, body: PredictIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    compute_limit(user)
     from .automl import predict_rows
     m = get_or_404(db, ModelRun, mid, user)
     if m.status != "succeeded" or not m.model_bytes:
@@ -573,6 +591,7 @@ class ScenarioIn(BaseModel):
 
 @app.post("/api/models/{mid}/scenario")
 def model_scenario(mid: str, body: ScenarioIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    compute_limit(user)
     from .automl import AutoMLError, run_scenario
     m = get_or_404(db, ModelRun, mid, user)
     if m.status != "succeeded" or not m.model_bytes:
@@ -594,6 +613,7 @@ def delete_model(mid: str, db: Session = Depends(get_session), user: User = Depe
 
 @app.get("/api/compare/datasets")
 def compare_datasets(a: str, b: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    compute_limit(user)
     from .compare import compare
     da, dbb = get_or_404(db, Dataset, a, user), get_or_404(db, Dataset, b, user)
     if a == b:
@@ -613,6 +633,7 @@ def _dataset_eda(d: Dataset) -> dict[str, Any]:
 
 @app.get("/api/datasets/{did}/report")
 def dataset_report(did: str, format: str = Query("html", pattern="^(html|pdf)$"), db: Session = Depends(get_session), user: User = Depends(current_user)):
+    compute_limit(user)
     d = get_or_404(db, Dataset, did, user)
     qs = db.scalars(select(AskQuery).where(AskQuery.owner_id == user.id, AskQuery.dataset_id == did, AskQuery.pinned.is_(True)).order_by(AskQuery.created_at)).all()
     ms = db.scalars(select(ModelRun).where(ModelRun.owner_id == user.id, ModelRun.dataset_id == did, ModelRun.status == "succeeded")
@@ -632,6 +653,7 @@ _pattern_cache: dict[str, Any] = {}
 @app.get("/api/datasets/{did}/patterns/{kind}")
 def dataset_patterns(did: str, kind: str, request: Request, db: Session = Depends(get_session), user: User = Depends(current_user)):
     """Anomalies, forecast or segments, computed from the stored file and cached per dataset version and parameters."""
+    compute_limit(user)
     from . import patterns as pt
     d = get_or_404(db, Dataset, did, user)
     q = dict(request.query_params)
@@ -724,6 +746,7 @@ def dataset_pipeline(did: str, db: Session = Depends(get_session), user: User = 
 @app.get("/api/datasets/{did}/reproduce.zip")
 def dataset_reproduce(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
     """A bundle that rebuilds this dataset version from its uploaded source and re-runs saved questions, without InsightForge."""
+    compute_limit(user)
     import io
     import json as _json
     import zipfile
@@ -1277,6 +1300,7 @@ def guest(response: FResponse, request: Request, db: Session = Depends(get_sessi
     """One-click demo: a throwaway account (deleted after GUEST_TTL_HOURS) with the retail demo already loaded."""
     import secrets
     auth.check_rate(request, "guest")
+    auth.check_guest_capacity()
     auth.record_fail(request, "guest")  # counts towards the per-address limit so guests cannot be minted in bulk
     u = User(email=f"guest-{secrets.token_hex(6)}@guest.insightforge", name="Guest", password_hash=auth.hash_password(secrets.token_urlsafe(24)),
              is_admin=False, is_guest=True)

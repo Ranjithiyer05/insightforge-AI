@@ -182,7 +182,7 @@ def segments(df: pd.DataFrame, profile: dict[str, Any], columns: list[str] | Non
     Z = StandardScaler().fit_transform(X)
     tries = []
     ks = [k] if k else range(2, 9)
-    sil_sample = min(len(Z), 4000)
+    sil_sample = min(len(Z), 2000)
     best = None
     for kk in ks:
         km = KMeans(n_clusters=kk, n_init=3, random_state=SEED).fit(Z)

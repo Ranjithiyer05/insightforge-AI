@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
+import { DatasetCompare } from "@/components/dataset-compare";
+import { Tabs } from "@/components/ui/misc";
 import { ArrowLeftRight, Columns2 } from "lucide-react";
 import { useApi } from "@/lib/hooks";
 import { cn, fmtNum, humanize, timeAgo } from "@/lib/utils";
@@ -50,9 +52,17 @@ function Compare() {
   const set = (k: "a" | "b", v: string) => { const p = new URLSearchParams(sp.toString()); v ? p.set(k, v) : p.delete(k); router.replace(`/compare?${p.toString()}`); };
   const keys = useMemo(() => Array.from(new Set([...Object.keys(a?.result?.metrics || {}), ...Object.keys(b?.result?.metrics || {})])), [a, b]);
   const opts = (list || []);
+  const mode = sp.get("mode") === "datasets" ? "datasets" : "analyses";
+  const header = (
+    <>
+      <PageHeader title="Compare" description={mode === "datasets" ? "Two datasets side by side: schema changes and which columns shifted." : "Put two finished analyses side by side: methods, verification and every metric they reported."} />
+      <Tabs value={mode} onChange={(m) => router.replace(m === "datasets" ? "/compare?mode=datasets" : "/compare")} items={[{ value: "analyses", label: "Analyses" }, { value: "datasets", label: "Datasets" }]} />
+    </>
+  );
+  if (mode === "datasets") return <div className="space-y-6 animate-in">{header}<DatasetCompare /></div>;
   return (
     <div className="space-y-6 animate-in">
-      <PageHeader title="Compare analyses" description="Put two finished analyses side by side: methods, verification and every metric they reported." />
+      {header}
       <Card className="p-4">
         <div className="grid items-end gap-3 md:grid-cols-[1fr_auto_1fr]">
           <div className="space-y-1.5"><Label>Analysis A</Label><Select value={aId || ""} onChange={(e) => set("a", e.target.value)}><option value="">Select…</option>{opts.map((o) => <option key={o.id} value={o.id}>{o.question.slice(0, 80)} · {o.dataset_name}</option>)}</Select></div>

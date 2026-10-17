@@ -412,14 +412,7 @@ _eda_cache: dict[str, dict[str, Any]] = {}
 
 @app.get("/api/datasets/{did}/eda")
 def dataset_eda(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
-    from .eda import run_eda
-    d = get_or_404(db, Dataset, did, user)
-    key = f"{did}:{d.sha256}"
-    if key not in _eda_cache:
-        if len(_eda_cache) > 16:
-            _eda_cache.pop(next(iter(_eda_cache)))
-        _eda_cache[key] = run_eda(storage.load_dataset(did), d.profile or {})
-    return _eda_cache[key]
+    return _dataset_eda(get_or_404(db, Dataset, did, user))
 
 
 class AskIn(BaseModel):
@@ -573,12 +566,64 @@ def model_predict(mid: str, body: PredictIn, db: Session = Depends(get_session),
     return {"predictions": predict_rows(m.model_bytes, body.rows, body.explain)}
 
 
+class ScenarioIn(BaseModel):
+    changes: list[dict[str, Any]] = Field(min_length=1, max_length=10)
+    filters: list[dict[str, Any]] | None = Field(default=None, max_length=10)
+
+
+@app.post("/api/models/{mid}/scenario")
+def model_scenario(mid: str, body: ScenarioIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .automl import AutoMLError, run_scenario
+    m = get_or_404(db, ModelRun, mid, user)
+    if m.status != "succeeded" or not m.model_bytes:
+        raise HTTPException(409, "This model has not finished training.")
+    get_or_404(db, Dataset, m.dataset_id, user)
+    try:
+        return run_scenario(m.model_bytes, storage.load_dataset(m.dataset_id), body.changes, body.filters)
+    except AutoMLError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
 @app.delete("/api/models/{mid}")
 def delete_model(mid: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
     m = get_or_404(db, ModelRun, mid, user)
     db.delete(m)
     db.commit()
     return {"deleted": mid}
+
+
+@app.get("/api/compare/datasets")
+def compare_datasets(a: str, b: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .compare import compare
+    da, dbb = get_or_404(db, Dataset, a, user), get_or_404(db, Dataset, b, user)
+    if a == b:
+        raise HTTPException(400, "Choose two different datasets.")
+    return compare(storage.load_dataset(a), storage.load_dataset(b), da.name, dbb.name if dbb.name != da.name else f"{dbb.name} (2)")
+
+
+def _dataset_eda(d: Dataset) -> dict[str, Any]:
+    from .eda import run_eda
+    key = f"{d.id}:{d.sha256}"
+    if key not in _eda_cache:
+        if len(_eda_cache) > 16:
+            _eda_cache.pop(next(iter(_eda_cache)))
+        _eda_cache[key] = run_eda(storage.load_dataset(d.id), d.profile or {})
+    return _eda_cache[key]
+
+
+@app.get("/api/datasets/{did}/report")
+def dataset_report(did: str, format: str = Query("html", pattern="^(html|pdf)$"), db: Session = Depends(get_session), user: User = Depends(current_user)):
+    d = get_or_404(db, Dataset, did, user)
+    qs = db.scalars(select(AskQuery).where(AskQuery.owner_id == user.id, AskQuery.dataset_id == did, AskQuery.pinned.is_(True)).order_by(AskQuery.created_at)).all()
+    ms = db.scalars(select(ModelRun).where(ModelRun.owner_id == user.id, ModelRun.dataset_id == did, ModelRun.status == "succeeded")
+                    .order_by(ModelRun.created_at.desc()).limit(2)).all()
+    sec = reports.dataset_report_sections(ds_dict(d) | {"profile": d.profile, "cleaning_log": d.cleaning_log}, _dataset_eda(d),
+                                          [{"question": q.question, "headline": q.headline} for q in qs], [{"result": m.result} for m in ms])
+    stamp = utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in d.name)[:60] or "dataset"
+    if format == "pdf":
+        return Response(reports.build_dataset_pdf(sec, stamp), media_type="application/pdf", headers={"content-disposition": f'attachment; filename="{safe}_report.pdf"'})
+    return Response(reports.build_dataset_html(sec, stamp), media_type="text/html; charset=utf-8", headers={"content-disposition": f'attachment; filename="{safe}_report.html"'})
 
 
 @app.delete("/api/datasets/{did}")

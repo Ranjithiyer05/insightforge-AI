@@ -177,3 +177,185 @@ def code_zip(analysis: dict[str, Any], steps: list[dict[str, Any]], dataset: dic
         z.writestr("README.md", "\n".join(readme) + "\n")
         z.writestr("plan.json", json.dumps(analysis.get("plan", {}), indent=2, default=str))
     return buf.getvalue()
+
+
+def _fmt(v: Any) -> str:
+    if isinstance(v, bool) or v is None:
+        return "" if v is None else str(v)
+    if isinstance(v, float):
+        return f"{v:,.4g}" if abs(v) < 1e6 else f"{v:,.0f}"
+    if isinstance(v, int):
+        return f"{v:,}"
+    return str(v)
+
+
+def _svg_bars(rows: list[tuple[str, float]], title: str, width: int = 640) -> str:
+    """Small self-contained horizontal bar chart for the HTML report."""
+    rows = rows[:15]
+    if not rows:
+        return ""
+    vmax = max(abs(v) for _, v in rows) or 1
+    h = 26 + 22 * len(rows)
+    out = [f'<figure><figcaption>{_esc(title)}</figcaption><svg viewBox="0 0 {width} {h}" width="100%" role="img" aria-label="{_esc(title)}">']
+    for i, (label, v) in enumerate(rows):
+        y = 10 + i * 22
+        w = abs(v) / vmax * (width - 260)
+        out.append(f'<text x="170" y="{y + 13}" text-anchor="end" font-size="11">{_esc(str(label)[:28])}</text>'
+                   f'<rect x="178" y="{y}" width="{w:.1f}" height="16" rx="3" fill="#4F46E5"/>'
+                   f'<text x="{184 + w:.1f}" y="{y + 13}" font-size="11" fill="#475569">{_esc(_fmt(v))}</text>')
+    out.append("</svg></figure>")
+    return "".join(out)
+
+
+def _svg_line(points: list[tuple[str, float]], title: str, width: int = 640, height: int = 200) -> str:
+    if len(points) < 2:
+        return ""
+    vals = [v for _, v in points]
+    lo, hi = min(vals), max(vals)
+    span = (hi - lo) or 1
+    xs = [40 + i * (width - 60) / (len(points) - 1) for i in range(len(points))]
+    ys = [height - 30 - (v - lo) / span * (height - 50) for v in vals]
+    path = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}" for i, (x, y) in enumerate(zip(xs, ys)))
+    return (f'<figure><figcaption>{_esc(title)}</figcaption><svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{_esc(title)}">'
+            f'<path d="{path}" fill="none" stroke="#4F46E5" stroke-width="2"/>'
+            f'<text x="40" y="{height - 8}" font-size="11" fill="#475569">{_esc(points[0][0])}</text>'
+            f'<text x="{width - 20}" y="{height - 8}" font-size="11" text-anchor="end" fill="#475569">{_esc(points[-1][0])}</text>'
+            f'<text x="4" y="{ys[vals.index(hi)]:.0f}" font-size="10" fill="#475569">{_esc(_fmt(hi))}</text>'
+            f'<text x="4" y="{ys[vals.index(lo)]:.0f}" font-size="10" fill="#475569">{_esc(_fmt(lo))}</text></svg></figure>')
+
+
+def _html_table(columns: list[str], rows: list[list[Any]]) -> str:
+    head = "".join(f"<th>{_esc(c)}</th>" for c in columns)
+    body = "".join("<tr>" + "".join(f"<td>{_esc(_fmt(v))}</td>" for v in r) + "</tr>" for r in rows)
+    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def dataset_report_sections(dataset: dict[str, Any], eda: dict[str, Any], questions: list[dict[str, Any]], models: list[dict[str, Any]]) -> dict[str, Any]:
+    """Collect report content once; rendered as HTML or PDF. Everything here was computed from the data."""
+    p = dataset.get("profile") or {}
+    return {"dataset": dataset, "profile": p, "eda": eda, "questions": questions, "models": models}
+
+
+def build_dataset_html(sec: dict[str, Any], generated: str) -> str:
+    d, p, e = sec["dataset"], sec["profile"], sec["eda"]
+    parts = [f"<h1>{_esc(d['name'])}</h1><p class='meta'>{d.get('n_rows', 0):,} rows × {d.get('n_cols', 0)} columns · SHA-256 {_esc(d.get('sha256', ''))[:16]}… · generated {generated}</p>"]
+    if d.get("is_synthetic"):
+        parts.append("<p class='warn'><b>Synthetic demo data.</b> All records are invented for demonstration.</p>")
+    if e.get("kpis"):
+        def kv(k: dict[str, Any]) -> str:
+            return f"{k['value'] * 100:.1f}%" if k.get("format") == "pct" else _fmt(k["value"])
+        parts.append("<section class='kpis'>" + "".join(f"<div><span>{_esc(k['label'])}</span><b>{_esc(kv(k))}</b></div>" for k in e["kpis"]) + "</section>")
+    parts.append("<h2>Data quality</h2>")
+    parts.append(f"<p>Quality score {round((p.get('quality_score') or 0) * 100)}/100 · {p.get('duplicates', 0):,} duplicate rows · {(p.get('missing_pct') or 0) * 100:.1f}% missing cells.</p>")
+    if p.get("issues"):
+        parts.append("<ul>" + "".join(f"<li class='{_esc(i['severity'])}'>{_esc(i['message'])}</li>" for i in p["issues"][:30]) + "</ul>")
+    if d.get("cleaning_log"):
+        parts.append("<h3>Cleaning applied</h3><ol>" + "".join(f"<li>{_esc(op.get('op'))} {_esc(op.get('column') or '')}: {_esc(op.get('reason') or '')}</li>"
+                                                                for h in d["cleaning_log"] for op in h.get("operations", [])) + "</ol>")
+    parts.append("<h2>Insights</h2>")
+    if e.get("insights"):
+        for i in e["insights"]:
+            ev = i.get("evidence", {})
+            parts.append(f"<div class='ins'><h3>{_esc(i['title'])}</h3><p>{_esc(i['detail'])}</p><p class='meta'>{_esc(ev.get('method', ''))}"
+                         f"{' · n = ' + _fmt(ev['n']) if ev.get('n') is not None else ''}. {_esc(i.get('caveat', ''))}</p></div>")
+    else:
+        parts.append("<p>No pattern passed the evidence thresholds.</p>")
+    t = e.get("trend")
+    if t:
+        parts.append(_svg_line([(r["period"], r["value"] or 0) for r in t["series"]], f"{'Total' if t['aggregation'] == 'sum' else 'Count of'} {t['measure']} per {t['granularity']}"))
+    for c in (e.get("categorical") or [])[:2]:
+        if c.get("by_measure"):
+            parts.append(_svg_bars([(r["value"], r["sum"]) for r in c["by_measure"]["rows"]], f"Total {c['by_measure']['measure']} by {c['column']}"))
+    if e.get("summary"):
+        parts.append("<h2>Summary statistics</h2>" + _html_table(["column", "count", "missing", "mean", "median", "std", "min", "max"],
+                                                                 [[r.get(k) for k in ("column", "count", "missing", "mean", "median", "std", "min", "max")] for r in e["summary"]]))
+    if sec["questions"]:
+        parts.append("<h2>Saved questions</h2><ul>" + "".join(f"<li><b>{_esc(q['question'])}</b>: {_esc(q['headline'])}</li>" for q in sec["questions"]) + "</ul>")
+    for m in sec["models"]:
+        r = m["result"]
+        tm = r["test_metrics"]
+        parts.append(f"<h2>Model: predicting {_esc(r['target'])}</h2><p>{_esc(r['best_model'].replace('_', ' '))} chosen by 5-fold cross-validation from "
+                     f"{len(r['leaderboard'])} candidates. {_esc(r['split_description'])}</p>")
+        parts.append(_html_table(["metric (held-out test)", "value"], [[k, v] for k, v in tm.items()]))
+        parts.append(_svg_bars([(s["feature"], s["mean_abs_shap"] or 0) for s in r["shap_global"]], "Mean |Shapley value| per feature"))
+        for w in r["warnings"]:
+            parts.append(f"<p class='warn'>{_esc(w)}</p>")
+        if r["excluded"]:
+            parts.append("<p class='meta'>Excluded: " + "; ".join(f"{_esc(x['feature'])} ({_esc(x['reason'])})" for x in r["excluded"]) + "</p>")
+    parts.append("<h2>Method notes</h2><ul>" + "".join(f"<li>{_esc(n)}</li>" for n in e.get("notes", [])) +
+                 "<li>Associations are not causes. Group differences and correlations may be explained by other factors.</li>"
+                 "<li>Model explanations describe how the model uses its inputs, not what would happen if an input were changed.</li></ul>")
+    css = ("body{font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;max-width:860px;margin:32px auto;padding:0 16px}"
+           "h1{font-size:26px;margin:0}h2{font-size:18px;color:#4f46e5;margin-top:28px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}h3{font-size:15px;margin:12px 0 2px}"
+           ".meta{color:#64748b;font-size:12px}.warn{color:#b45309}li.warning{color:#b45309}table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}"
+           "th,td{border:1px solid #e2e8f0;padding:4px 8px;text-align:left}th{background:#eef2ff}.kpis{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}"
+           ".kpis div{border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px}.kpis span{display:block;font-size:12px;color:#64748b}.kpis b{font-size:18px}"
+           ".ins{border-left:3px solid #4f46e5;padding-left:10px;margin:10px 0}figure{margin:12px 0}figcaption{font-size:12px;color:#334155;font-weight:600}"
+           "@media print{body{margin:0}}")
+    return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            f"<title>{_esc(d['name'])} · InsightForge report</title><style>{css}</style></head><body><p class='meta'>InsightForge AI · Dataset report</p>"
+            + "".join(parts) + "</body></html>")
+
+
+def build_dataset_pdf(sec: dict[str, Any], generated: str) -> bytes:
+    d, p, e = sec["dataset"], sec["profile"], sec["eda"]
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=16 * mm, title=f"InsightForge report: {d['name'][:80]}")
+    ss = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=ss["Heading1"], fontSize=16, textColor=colors.HexColor("#0F172A"), spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=12, textColor=ACCENT, spaceBefore=10, spaceAfter=4)
+    body = ParagraphStyle("b", parent=ss["BodyText"], fontSize=9, leading=12.5)
+    small = ParagraphStyle("s", parent=body, fontSize=7.5, textColor=colors.HexColor("#475569"))
+    tstyle = TableStyle([("FONTSIZE", (0, 0), (-1, -1), 7), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF2FF")), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CBD5E1"))])
+    el: list[Any] = [Paragraph("InsightForge AI · Dataset report", small), Paragraph(_esc(d["name"]), h1),
+                     Paragraph(f"{d.get('n_rows', 0):,} rows × {d.get('n_cols', 0)} columns · SHA-256 {_esc(d.get('sha256', ''))[:16]}… · generated {generated}", small)]
+    if d.get("is_synthetic"):
+        el.append(Paragraph("<b>SYNTHETIC DEMO DATA.</b> All records are invented for demonstration.", ParagraphStyle("w", parent=body, textColor=colors.HexColor("#B45309"))))
+    if e.get("kpis"):
+        el.append(Spacer(1, 4))
+        el.append(Table([[k["label"] for k in e["kpis"]], [f"{k['value'] * 100:.1f}%" if k.get("format") == "pct" else _fmt(k["value"]) for k in e["kpis"]]], style=tstyle))
+    el.append(Paragraph("Data quality", h2))
+    el.append(Paragraph(f"Quality score {round((p.get('quality_score') or 0) * 100)}/100 · {p.get('duplicates', 0):,} duplicate rows · {(p.get('missing_pct') or 0) * 100:.1f}% missing cells.", body))
+    for i in (p.get("issues") or [])[:25]:
+        el.append(Paragraph("• " + _esc(i["message"]), body))
+    el.append(Paragraph("Insights", h2))
+    for i in e.get("insights", []):
+        ev = i.get("evidence", {})
+        el.append(KeepTogether([Paragraph(f"<b>{_esc(i['title'])}</b>", body), Paragraph(_esc(i["detail"]), body),
+                                Paragraph(_esc(f"{ev.get('method', '')}. {i.get('caveat', '')}"), small), Spacer(1, 3)]))
+    if not e.get("insights"):
+        el.append(Paragraph("No pattern passed the evidence thresholds.", body))
+    t = e.get("trend")
+    if t:
+        dr = _chart_drawing({"kind": "line", "title": f"{t['measure']} per {t['granularity']}", "data": t["series"], "x": "period", "series": [{"key": "value"}]})
+        if dr:
+            el += [dr, Spacer(1, 4)]
+    for c in (e.get("categorical") or [])[:2]:
+        if c.get("by_measure"):
+            dr = _chart_drawing({"kind": "bar", "layout": "horizontal", "title": f"Total {c['by_measure']['measure']} by {c['column']}", "data": c["by_measure"]["rows"][:15],
+                                 "x": "value", "series": [{"key": "sum"}]})
+            if dr:
+                el += [dr, Spacer(1, 4)]
+    if e.get("summary"):
+        el.append(Paragraph("Summary statistics", h2))
+        keys = ("column", "count", "missing", "mean", "median", "std", "min", "max")
+        el.append(Table([list(keys)] + [[_fmt(r.get(k))[:18] for k in keys] for r in e["summary"][:30]], style=tstyle, repeatRows=1))
+    if sec["questions"]:
+        el.append(Paragraph("Saved questions", h2))
+        for q in sec["questions"]:
+            el.append(Paragraph(f"• <b>{_esc(q['question'])}</b>: {_esc(q['headline'])}", body))
+    for m in sec["models"]:
+        r = m["result"]
+        el.append(Paragraph(f"Model: predicting {_esc(r['target'])}", h2))
+        el.append(Paragraph(_esc(f"{r['best_model'].replace('_', ' ')} chosen by 5-fold cross-validation from {len(r['leaderboard'])} candidates. {r['split_description']}"), body))
+        el.append(Table([["Metric (held-out test)", "Value"]] + [[k, _fmt(v)] for k, v in r["test_metrics"].items()], style=tstyle))
+        dr = _chart_drawing({"kind": "bar", "layout": "horizontal", "title": "Mean |Shapley value| per feature", "data": r["shap_global"][:15], "x": "feature", "series": [{"key": "mean_abs_shap"}]})
+        if dr:
+            el.append(dr)
+        for w in r["warnings"]:
+            el.append(Paragraph("• " + _esc(w), body))
+    el.append(Paragraph("Method notes", h2))
+    for n in e.get("notes", []) + ["Associations are not causes.", "Model explanations describe how the model uses its inputs, not causal effects."]:
+        el.append(Paragraph("• " + _esc(n), body))
+    doc.build(el)
+    return buf.getvalue()

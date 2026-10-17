@@ -140,6 +140,72 @@ function Predictor({ model }: { model: any }) {
   );
 }
 
+function Scenario({ model }: { model: any }) {
+  const schema: any[] = model.result.input_schema;
+  const cats = schema.filter((f) => f.kind === "category");
+  const blank = () => ({ feature: schema[0].name, op: schema[0].kind === "numeric" ? "percent" : "set", value: schema[0].kind === "numeric" ? 10 : schema[0].options[0] });
+  const [changes, setChanges] = useState<any[]>([blank()]);
+  const [filter, setFilter] = useState<{ column: string; value: string } | null>(null);
+  const [out, setOut] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const upd = (i: number, patch: any) => setChanges(changes.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  async function go() {
+    setBusy(true); setErr(null);
+    try {
+      setOut(await api(`/models/${model.id}/scenario`, { method: "POST", json: { changes, filters: filter ? [{ column: filter.column, op: "==", value: filter.value }] : null } }));
+    } catch (e: any) { setErr(e.message); setOut(null); } finally { setBusy(false); }
+  }
+  const OPS = [["percent", "change by %"], ["add", "add"], ["multiply", "multiply by"], ["set", "set to"]];
+  return (
+    <Card>
+      <CardHeader><div><CardTitle>What-if scenario</CardTitle><CardDescription>Change inputs for every row (or a segment) and see how the model's average prediction moves, with a 95% bootstrap interval.</CardDescription></div></CardHeader>
+      <CardContent className="space-y-3">
+        {changes.map((c, i) => {
+          const f = schema.find((x) => x.name === c.feature);
+          return (
+            <div key={i} className="grid gap-2 sm:grid-cols-[1fr_150px_1fr_auto]">
+              <Select aria-label="Feature" value={c.feature} onChange={(e) => { const nf = schema.find((x) => x.name === e.target.value); upd(i, { feature: nf.name, op: nf.kind === "numeric" ? "percent" : "set", value: nf.kind === "numeric" ? 10 : nf.options[0] }); }}>
+                {schema.map((x) => <option key={x.name}>{x.name}</option>)}</Select>
+              <Select aria-label="Change" value={c.op} onChange={(e) => upd(i, { op: e.target.value })} disabled={f?.kind !== "numeric"}>
+                {(f?.kind === "numeric" ? OPS : [["set", "set to"]]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
+              {f?.kind === "numeric" ? <Input aria-label="Value" type="number" step="any" value={c.value} onChange={(e) => upd(i, { value: e.target.value === "" ? "" : +e.target.value })} />
+                : <Select aria-label="Value" value={c.value} onChange={(e) => upd(i, { value: e.target.value })}>{f?.options.map((o: string) => <option key={o}>{o}</option>)}</Select>}
+              <Button variant="ghost" size="icon" aria-label="Remove change" disabled={changes.length === 1} onClick={() => setChanges(changes.filter((_, j) => j !== i))}><Trash2 /></Button>
+            </div>
+          );
+        })}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setChanges([...changes, blank()])} disabled={changes.length >= 5}>Add change</Button>
+          {cats.length > 0 && (filter ? (
+            <span className="flex items-center gap-1.5 text-[12.5px] text-fg-2">Only rows where
+              <Select className="h-8 w-36" value={filter.column} onChange={(e) => setFilter({ column: e.target.value, value: cats.find((x) => x.name === e.target.value).options[0] })}>{cats.map((x) => <option key={x.name}>{x.name}</option>)}</Select> =
+              <Select className="h-8 w-36" value={filter.value} onChange={(e) => setFilter({ ...filter, value: e.target.value })}>{cats.find((x) => x.name === filter.column)?.options.map((o: string) => <option key={o}>{o}</option>)}</Select>
+              <button className="text-accent-text hover:underline" onClick={() => setFilter(null)}>all rows</button></span>
+          ) : <button className="text-[12.5px] text-accent-text hover:underline" onClick={() => setFilter({ column: cats[0].name, value: cats[0].options[0] })}>Limit to a segment</button>)}
+          <Button size="sm" className="ml-auto" onClick={go} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Play />} Run scenario</Button>
+        </div>
+        {err && <ErrorNote message={err} />}
+        {out && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3 rounded-lg border border-border p-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div><div className="text-[11.5px] text-fg-3">Average before</div><div className="num text-[18px] font-semibold">{fmtNum(out.before_mean)}</div></div>
+              <div><div className="text-[11.5px] text-fg-3">Average after</div><div className="num text-[18px] font-semibold">{fmtNum(out.after_mean)}</div></div>
+              <div><div className="text-[11.5px] text-fg-3">Difference</div><div className={cn("num text-[18px] font-semibold", out.difference > 0 ? "text-success" : out.difference < 0 ? "text-danger" : "")}>{out.difference > 0 ? "+" : ""}{fmtNum(out.difference)}</div></div>
+              <div><div className="text-[11.5px] text-fg-3">95% interval</div><div className="num text-[15px] font-medium">{fmtNum(out.ci95[0])} to {fmtNum(out.ci95[1])}</div></div>
+            </div>
+            <p className="text-[12.5px] text-fg-2">Measured in {out.unit}, over {out.rows.toLocaleString()} rows. The prediction rose for {(out.share_increased * 100).toFixed(0)}% of rows and fell for {(out.share_decreased * 100).toFixed(0)}%.
+              {out.total_before != null && ` Total predicted: ${fmtNum(out.total_before)} → ${fmtNum(out.total_after)}.`}</p>
+            <ChartRenderer spec={{ id: "scn", kind: "bar", title: "Distribution of predictions before and after", data: out.histogram, x: "bin", series: [{ key: "before", label: "Before" }, { key: "after", label: "After" }] }} height={220} />
+            {out.warnings.map((w: string) => <p key={w} className="flex gap-1.5 text-[12.5px] text-warning"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{w}</p>)}
+            <p className="flex gap-1.5 text-[12px] text-fg-3"><Info className="mt-0.5 size-3.5 shrink-0" />{out.caveat}</p>
+          </motion.div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function Results({ model }: { model: any }) {
   const r = model.result;
   const [view, setView] = useState<"importance" | "shap" | "pdp">("shap");
@@ -205,6 +271,7 @@ function Results({ model }: { model: any }) {
         </CardContent>
       </Card>
       <Predictor model={model} />
+      <Scenario model={model} />
     </div>
   );
 }

@@ -359,7 +359,8 @@ def train(df: pd.DataFrame, profile: dict[str, Any], target: str, features: list
 
     bundle = io.BytesIO()
     joblib.dump({"pipe": pipe, "target": target, "features": feats, "num": num, "cat": cat, "task": task, "binary": binary, "positive_class": pos,
-                 "background": bg}, bundle, compress=3)
+                 "background": bg,
+                 "categories": {c: sorted(Xtr[c].dropna().astype(str).unique().tolist()) for c in cat}}, bundle, compress=3)
     schema = []
     for c in feats:
         if c in num:
@@ -415,3 +416,95 @@ def predict_rows(model_bytes: bytes, rows: list[dict[str, Any]], explain: bool =
                                 "scale": "probability of " + str(b["positive_class"]) if binary else ("probability of the predicted class" if task == "classification" else "prediction")}
         out.append(r)
     return out
+
+
+def run_scenario(model_bytes: bytes, df: pd.DataFrame, changes: list[dict[str, Any]], filters: list[dict[str, Any]] | None = None,
+                 n_boot: int = 300, max_rows: int = 20_000) -> dict[str, Any]:
+    """What-if: apply changes to every (or every filtered) row, compare the model's average prediction before and after.
+
+    The difference is a model-based estimate with a bootstrap 95% interval over rows. It shows what the model expects,
+    not what would happen if the change were made in reality (that needs an experiment).
+    """
+    b = joblib.load(io.BytesIO(model_bytes))
+    feats, num = b["features"], b["num"]
+    if not changes:
+        raise AutoMLError("Add at least one change.")
+    d = df.copy()
+    for f in filters or []:
+        c, op, v = f.get("column"), f.get("op", "=="), f.get("value")
+        if c not in d.columns:
+            raise AutoMLError(f"Unknown filter column {c!r}.")
+        if op == "==":
+            d = d[d[c].astype(str) == str(v)]
+        elif op == "!=":
+            d = d[d[c].astype(str) != str(v)]
+        elif op in (">", ">=", "<", "<="):
+            x = pd.to_numeric(d[c], errors="coerce")
+            d = d[{">": x > float(v), ">=": x >= float(v), "<": x < float(v), "<=": x <= float(v)}[op]]
+        else:
+            raise AutoMLError(f"Unknown filter operator {op!r}.")
+    if len(d) < 10:
+        raise AutoMLError(f"Only {len(d)} rows match the filter; at least 10 are needed.")
+    if len(d) > max_rows:
+        d = d.sample(max_rows, random_state=SEED)
+    X = pd.DataFrame({f: d[f] if f in d.columns else None for f in feats})
+    for c in feats:
+        if c in num:
+            X[c] = pd.to_numeric(X[c], errors="coerce")
+        else:
+            X[c] = X[c].astype(str).where(X[c].notna(), None).astype(object)
+    X2 = X.copy()
+    applied = []
+    for ch in changes:
+        f, op, v = ch.get("feature"), ch.get("op", "set"), ch.get("value")
+        if f not in feats:
+            raise AutoMLError(f"{f!r} is not a model feature.")
+        if f in num:
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                raise AutoMLError(f"{f} is numeric; give a number.") from None
+            if op == "set":
+                X2[f] = v
+            elif op == "add":
+                X2[f] = X2[f] + v
+            elif op == "multiply":
+                X2[f] = X2[f] * v
+            elif op == "percent":
+                X2[f] = X2[f] * (1 + v / 100)
+            else:
+                raise AutoMLError(f"Unknown change {op!r}.")
+            lo, hi = float(X[f].min()), float(X[f].max())
+            outside = float(((X2[f] < lo) | (X2[f] > hi)).mean())
+            applied.append({"feature": f, "op": op, "value": v, "share_outside_observed_range": _r(outside, 3)})
+        else:
+            if op != "set":
+                raise AutoMLError(f"{f} is categorical; only 'set' applies.")
+            known = set(b.get("categories", {}).get(f) or df[f].dropna().astype(str))
+            if str(v) not in known:
+                raise AutoMLError(f"{v!r} never appears in {f}; the model has no basis for it.")
+            X2[f] = str(v)
+            applied.append({"feature": f, "op": "set", "value": str(v), "rows_changed": int((X[f] != str(v)).sum())})
+    predict = _predict_fn(b["pipe"], b["task"], b["binary"])
+    p0, p1 = np.asarray(predict(X), dtype=float), np.asarray(predict(X2), dtype=float)
+    diff = p1 - p0
+    rng = np.random.default_rng(SEED)
+    boots = [diff[rng.integers(0, len(diff), len(diff))].mean() for _ in range(n_boot)]
+    lo, hi = np.percentile(boots, [2.5, 97.5])
+    unit = f"probability of {b.get('target')} = {b['positive_class']}" if b["binary"] else ("probability of the predicted class" if b["task"] == "classification" else f"predicted {b.get('target')}")
+    warnings_ = []
+    for a in applied:
+        if a.get("share_outside_observed_range", 0) > 0.05:
+            warnings_.append(f"{a['share_outside_observed_range']:.0%} of rows move {a['feature']} outside the range seen in training; the model is extrapolating there.")
+    hist_edges = np.histogram_bin_edges(np.concatenate([p0, p1]), bins=20)
+    h0, _ = np.histogram(p0, hist_edges)
+    h1, _ = np.histogram(p1, hist_edges)
+    return {
+        "rows": int(len(d)), "unit": unit, "changes": applied,
+        "before_mean": _r(float(p0.mean())), "after_mean": _r(float(p1.mean())), "difference": _r(float(diff.mean())),
+        "ci95": [_r(float(lo)), _r(float(hi))], "share_increased": _r(float((diff > 1e-9).mean()), 3), "share_decreased": _r(float((diff < -1e-9).mean()), 3),
+        "total_before": _r(float(p0.sum())) if b["task"] == "regression" else None, "total_after": _r(float(p1.sum())) if b["task"] == "regression" else None,
+        "histogram": [{"bin": f"{hist_edges[i]:.3g}", "before": int(h0[i]), "after": int(h1[i])} for i in range(len(h0))],
+        "warnings": warnings_,
+        "caveat": "This is what the trained model predicts if only these inputs change. It is not a causal estimate: in reality other factors may change too.",
+    }

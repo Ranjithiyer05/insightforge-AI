@@ -1,4 +1,5 @@
 "use client";
+import { Logo } from "@/components/logo";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -53,7 +54,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="hidden flex-col justify-between border-r border-border bg-surface p-10 lg:flex">
-        <div className="flex items-center gap-2.5"><div className="flex size-8 items-center justify-center rounded-lg bg-accent text-white"><Sparkles className="size-4" /></div><span className="font-semibold">InsightForge AI</span></div>
+        <Logo tagline={false} />
         <div className="max-w-md">
           <h2 className="text-3xl font-semibold leading-tight tracking-tight">An autonomous data scientist that shows its work.</h2>
           <p className="mt-3 text-fg-2">Ask a question in plain English. InsightForge plans the analysis, runs real code in a sandbox, verifies every number independently and learns only from validated experience.</p>

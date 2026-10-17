@@ -215,7 +215,46 @@ def overview(db: Session = Depends(get_session), user: User = Depends(current_us
         "recent_datasets": [ds_dict(d) for d in db.scalars(select(Dataset).where(Dataset.owner_id == user.id).order_by(Dataset.created_at.desc()).limit(5)).all()],
         "recent_analyses": [an_dict(a) for a in db.scalars(select(Analysis).where(Analysis.owner_id == user.id).order_by(Analysis.created_at.desc()).limit(6)).all()],
         "experiment_status": {s: count(Experiment, Experiment.status == s) for s in ("succeeded", "weak", "failed", "invalid")},
+        **_activity(db, user),
     }
+
+
+def _activity(db: Session, user: User, days: int = 90) -> dict[str, Any]:
+    """Real per-day counts for the last `days` days, deltas vs the previous window, and a recent activity feed."""
+    now = utcnow()
+    start = (now - timedelta(days=2 * days - 1)).date()
+    kinds = {"analyses": Analysis, "datasets": Dataset, "questions": AskQuery, "models": ModelRun}
+    per: dict[str, dict[str, int]] = {}
+    for key, m in kinds.items():
+        rows = db.scalars(select(m.created_at).where(m.owner_id == user.id, m.created_at >= now - timedelta(days=2 * days))).all()
+        c: dict[str, int] = {}
+        for t in rows:
+            if t is not None:
+                c[t.date().isoformat()] = c.get(t.date().isoformat(), 0) + 1
+        per[key] = c
+    dates = [(start + timedelta(days=i)).isoformat() for i in range(2 * days)]
+    full = [{"date": d, **{k: per[k].get(d, 0) for k in kinds}} for d in dates]
+    series = full[days:]
+
+    def window(n: int) -> dict[str, Any]:
+        cur, prev = full[-n:], full[-2 * n:-n]
+        out = {}
+        for k in kinds:
+            a, b = sum(r[k] for r in cur), sum(r[k] for r in prev)
+            out[k] = {"current": a, "previous": b, "change_pct": round((a - b) / b * 100, 1) if b else None}
+        return out
+
+    feed: list[dict[str, Any]] = []
+    for a in db.scalars(select(Analysis).where(Analysis.owner_id == user.id).order_by(Analysis.created_at.desc()).limit(6)).all():
+        feed.append({"kind": "analysis", "id": a.id, "title": a.question, "status": a.status, "at": _iso(a.created_at), "href": f"/analyses/{a.id}"})
+    for q in db.scalars(select(AskQuery).where(AskQuery.owner_id == user.id).order_by(AskQuery.created_at.desc()).limit(6)).all():
+        feed.append({"kind": "question", "id": q.id, "title": q.question, "status": "answered", "at": _iso(q.created_at), "href": f"/datasets/{q.dataset_id}?tab=ask"})
+    for r in db.scalars(select(ModelRun).where(ModelRun.owner_id == user.id).order_by(ModelRun.created_at.desc()).limit(6)).all():
+        feed.append({"kind": "model", "id": r.id, "title": f"Model predicting {r.target}", "status": r.status, "at": _iso(r.created_at), "href": f"/datasets/{r.dataset_id}?tab=model"})
+    for e in db.scalars(select(MonitorEvent).where(MonitorEvent.owner_id == user.id, MonitorEvent.status == "breach").order_by(MonitorEvent.created_at.desc()).limit(4)).all():
+        feed.append({"kind": "alert", "id": e.id, "title": e.message or "KPI rule breached", "status": "breach", "at": _iso(e.created_at), "href": f"/dashboards/{e.dashboard_id}"})
+    feed.sort(key=lambda f: f["at"] or "", reverse=True)
+    return {"series": series, "windows": {str(n): window(n) for n in (7, 30, 90)}, "activity": feed[:10]}
 
 
 @app.get("/api/search")

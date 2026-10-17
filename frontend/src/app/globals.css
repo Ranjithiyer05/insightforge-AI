@@ -44,6 +44,8 @@
   --grad-1: #5b4cf0;
   --grad-2: #8b5cf6;
   --grad-3: #06b6d4;
+  --grid-dot: rgba(15, 18, 34, 0.07);
+  --card-hi: rgba(255, 255, 255, 0.9);
 }
 
 .dark {
@@ -81,6 +83,8 @@
   --sb-bg: #0a0b14;
   --sb-bg-2: #12132a;
   --sb-border: rgba(255, 255, 255, 0.06);
+  --grid-dot: rgba(255, 255, 255, 0.05);
+  --card-hi: rgba(255, 255, 255, 0.05);
 }
 
 @theme inline {
@@ -106,6 +110,7 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), var(--font-inter), ui-sans-serif, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-card: var(--shadow);
   --shadow-xs: var(--shadow-sm);
@@ -114,6 +119,8 @@
 html, body { background: var(--bg); color: var(--text); }
 .app-bg {
   background:
+    linear-gradient(to bottom, transparent, var(--bg) 520px),
+    radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0) 0 0 / 22px 22px,
     radial-gradient(900px 500px at 85% -10%, var(--bg-glow-1), transparent 60%),
     radial-gradient(700px 420px at -5% 30%, var(--bg-glow-2), transparent 60%),
     var(--bg);
@@ -158,3 +165,17 @@ body { font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiase
 .recharts-cartesian-axis-tick-value { fill: var(--text-3); font-size: 11px; }
 .recharts-cartesian-grid line { stroke: var(--border); }
 .recharts-legend-item-text { color: var(--text-2) !important; font-size: 12px; }
+
+h1, h2, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+.card-surface { box-shadow: inset 0 1px 0 var(--card-hi), var(--shadow); }
+.kpi { box-shadow: inset 0 1px 0 var(--card-hi), var(--shadow); }
+.kpi:hover { transform: translateY(-2px); }
+.kpi { transition: transform 180ms cubic-bezier(.22,1,.36,1), border-color 160ms, box-shadow 160ms; }
+.skeleton { position: relative; overflow: hidden; background: var(--surface-2); }
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--surface) 70%, transparent), transparent); animation: shimmer 1.4s infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
+@keyframes indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+.progress-indeterminate { animation: indeterminate 1.3s cubic-bezier(.4,0,.2,1) infinite; }
+:focus-visible { outline-color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .skeleton::after, .progress-indeterminate { animation: none; } .kpi:hover { transform: none; } }

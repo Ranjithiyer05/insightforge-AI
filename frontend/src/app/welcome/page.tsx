@@ -1,4 +1,5 @@
 "use client";
+import { Logo } from "@/components/logo";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -33,7 +34,7 @@ export default function Welcome() {
   return (
     <div className="min-h-screen bg-bg text-fg">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5">
-        <div className="flex items-center gap-2.5"><div className="flex size-9 items-center justify-center rounded-xl grad-accent text-white"><Sparkles className="size-[18px]" /></div><span className="text-[15px] font-semibold">InsightForge</span></div>
+        <Logo tagline={false} />
         <nav className="flex items-center gap-2">
           <Link href="/login" className="rounded-lg px-3 py-1.5 text-[13.5px] text-fg-2 hover:bg-surface-2 hover:text-fg">Sign in</Link>
           <Button asChild size="sm"><Link href="/register">Create account</Link></Button>

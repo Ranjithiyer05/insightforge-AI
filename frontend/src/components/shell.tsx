@@ -7,6 +7,8 @@ import {
   BarChart3, Beaker, BrainCircuit, ChevronsLeft, ChevronsRight, Database, FileText, History, LayoutDashboard, LogOut, Menu, Moon,
   PlusCircle, Columns2, Search, Settings, Shield, Sun, Monitor, Cpu, Sparkles, X, FolderKanban, LayoutGrid,
 } from "lucide-react";
+import { Logo } from "./logo";
+import { motion } from "./motion";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
@@ -34,17 +36,6 @@ const NAV_GROUPS = [
   { label: "System", items: [{ href: "/settings", label: "Settings", icon: Settings }] },
 ];
 
-function Logo({ collapsed }: { collapsed?: boolean }) {
-  return (
-    <Link href="/" className="flex items-center gap-2.5 px-1">
-      <div className="relative flex size-9 items-center justify-center rounded-xl grad-accent text-white shadow-[0_6px_20px_-6px_rgba(139,92,246,0.8)]">
-        <Sparkles className="size-[18px]" />
-      </div>
-      {!collapsed && <div className="leading-tight"><div className="text-[15px] font-semibold tracking-tight text-white">InsightForge</div><div className="text-[11px] text-[var(--sb-text-3)]">Autonomous data scientist</div></div>}
-    </Link>
-  );
-}
-
 function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean; onToggle: () => void; mobile?: boolean; onClose?: () => void }) {
   const path = usePathname();
   const { user } = useAuth();
@@ -54,7 +45,7 @@ function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean;
   return (
     <aside className={cn("sidebar flex h-full flex-col border-r border-[var(--sb-border)] transition-[width] duration-300 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none", collapsed ? "w-[72px]" : "w-64")}>
       <div className="flex h-16 items-center justify-between px-4">
-        <Logo collapsed={collapsed} />
+        <Link href="/" className="px-1"><Logo collapsed={collapsed} dark /></Link>
         {mobile && <button onClick={onClose} className="rounded-md p-1.5 text-[var(--sb-text-3)] hover:bg-[var(--sb-hover)]" aria-label="Close menu"><X className="size-4" /></button>}
       </div>
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-3 scrollbar-thin">
@@ -67,10 +58,10 @@ function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean;
                 const link = (
                   <Link key={it.href} href={it.href} onClick={onClose}
                     className={cn("group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-[13.5px] font-medium transition-colors",
-                      active ? "bg-[var(--sb-active)] text-white" : "text-[var(--sb-text)] hover:bg-[var(--sb-hover)] hover:text-white", collapsed && "justify-center px-0")}>
-                    {active && <span className="absolute -left-3 top-1.5 bottom-1.5 w-[3px] rounded-r-full grad-accent" />}
-                    <it.icon className={cn("size-[18px] shrink-0", active ? "text-[#b4adff]" : "text-[var(--sb-text-3)] group-hover:text-white")} />
-                    {!collapsed && it.label}
+                      active ? "text-white" : "text-[var(--sb-text)] hover:bg-[var(--sb-hover)] hover:text-white", collapsed && "justify-center px-0")}>
+                    {active && <motion.span layoutId="nav-active" className="absolute inset-0 -z-0 rounded-[inherit] bg-[var(--sb-active)] shadow-[inset_0_0_0_1px_rgba(164,156,255,0.22),0_8px_20px_-10px_rgba(124,116,255,0.7)]" transition={{ type: "spring", stiffness: 480, damping: 38 }} />}{active && <span className="absolute -left-3 top-1.5 bottom-1.5 w-[3px] rounded-r-full grad-accent" />}
+                    <it.icon className={cn("relative size-[18px] shrink-0", active ? "text-[#b4adff]" : "text-[var(--sb-text-3)] group-hover:text-white")} />
+                    {!collapsed && <span className="relative">{it.label}</span>}
                   </Link>
                 );
                 return collapsed ? <Tooltip key={it.href} content={it.label}>{link}</Tooltip> : link;

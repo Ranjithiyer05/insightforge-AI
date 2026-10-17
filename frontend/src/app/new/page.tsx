@@ -130,7 +130,7 @@ function NewAnalysis() {
               {progress !== null && fileInfo && (
                 <div className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-center justify-between text-[13px]"><span className="flex items-center gap-2"><FileSpreadsheet className="size-4 text-fg-3" />{fileInfo.name}</span><span className="num text-fg-3">{progress < 100 ? `${progress}%` : "Profiling…"}</span></div>
-                  <Progress value={progress} />
+                  <Progress value={progress} indeterminate={progress >= 100} />
                 </div>
               )}
             </CardContent>

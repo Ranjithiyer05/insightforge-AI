@@ -1,28 +1,42 @@
 "use client";
 import * as React from "react";
 import * as T from "@radix-ui/react-tooltip";
+import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-md bg-surface-2", className)} />;
+  return <div className={cn("skeleton rounded-md", className)} />;
 }
 
-export function Progress({ value, className }: { value: number; className?: string }) {
+export function Progress({ value, className, indeterminate }: { value: number; className?: string; indeterminate?: boolean }) {
   return (
-    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-3", className)} role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100}>
-      <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    <div className={cn("relative h-1.5 w-full overflow-hidden rounded-full bg-surface-3", className)} role="progressbar" aria-valuenow={indeterminate ? undefined : value} aria-valuemin={0} aria-valuemax={100} aria-busy={indeterminate || undefined}>
+      {indeterminate
+        ? <div className="progress-indeterminate absolute inset-y-0 w-2/5 rounded-full grad-accent" />
+        : <div className="h-full rounded-full grad-accent transition-[width] duration-300 ease-out" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />}
     </div>
   );
 }
 
 export function Tabs<T extends string>({ value, onChange, items, className }: { value: T; onChange: (v: T) => void; items: { value: T; label: React.ReactNode; count?: number }[]; className?: string }) {
+  const id = React.useId();
+  const onKey = (e: React.KeyboardEvent) => {
+    const i = items.findIndex((it) => it.value === value);
+    const n = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+    if (n === null) return;
+    e.preventDefault();
+    const next = items[(n + items.length) % items.length];
+    onChange(next.value);
+    (e.currentTarget.querySelector(`[data-v="${CSS.escape(next.value)}"]`) as HTMLElement | null)?.focus();
+  };
   return (
-    <div role="tablist" className={cn("inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl bg-surface-2/80 p-1 ring-1 ring-inset ring-border", className)}>
+    <div role="tablist" onKeyDown={onKey} className={cn("inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl bg-surface-2/80 p-1 ring-1 ring-inset ring-border", className)}>
       {items.map((it) => (
-        <button key={it.value} role="tab" aria-selected={value === it.value} onClick={() => onChange(it.value)}
-          className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium whitespace-nowrap transition", value === it.value ? "bg-surface text-fg shadow-card ring-1 ring-border" : "text-fg-3 hover:text-fg")}>
-          {it.label}
-          {it.count !== undefined && <span className="rounded bg-surface-3 px-1 text-[11px] num text-fg-3">{it.count}</span>}
+        <button key={it.value} data-v={it.value} role="tab" aria-selected={value === it.value} tabIndex={value === it.value ? 0 : -1} onClick={() => onChange(it.value)}
+          className={cn("relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50", value === it.value ? "text-fg" : "text-fg-3 hover:text-fg")}>
+          {value === it.value && <motion.span layoutId={`tab-${id}`} className="absolute inset-0 rounded-lg bg-surface shadow-card ring-1 ring-border" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+          <span className="relative flex items-center gap-1.5">{it.label}
+          {it.count !== undefined && <span className="rounded bg-surface-3 px-1 text-[11px] num text-fg-3">{it.count}</span>}</span>
         </button>
       ))}
     </div>

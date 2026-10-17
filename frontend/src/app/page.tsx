@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth";
 import { AnimatedNumber, Stagger, StaggerItem } from "@/components/motion";
 import { useWorkspace } from "@/components/workspace";
+import { Tabs } from "@/components/ui/misc";
+import { ActivityChart, ActivityFeed, KpiCard, METRICS, Range, StatusDonut, bucket } from "@/components/overview-widgets";
 
 const EXAMPLES = [
   { q: DEMO_QUESTION, tag: "Retail", icon: TrendingDown, tone: "text-[#df4f6a] bg-[#df4f6a]/10" },
@@ -108,6 +110,8 @@ export default function Overview() {
   const { setCurrent } = useWorkspace();
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [range, setRange] = useState<Range>("30");
+  const [visible, setVisible] = useState<Set<any>>(() => new Set(METRICS.map((m) => m.key)));
   const [err, setErr] = useState<string | null>(null);
   const demo = async (which: "retail" | "churn", q?: string) => {
     setBusy(which); setErr(null);
@@ -116,9 +120,29 @@ export default function Overview() {
   const c = data?.counts;
   const isNew = c && c.datasets === 0;
 
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const win = data?.windows?.[range];
+  const spark = data?.series ? bucket(data.series, range === "7" ? "30" : range) : [];
+  const toggle = (k: any) => setVisible((v) => { const n = new Set(v); if (n.has(k)) { if (n.size > 1) n.delete(k); } else n.add(k); return n; });
+
   return (
-    <div className="space-y-7 animate-in">
-      <section className="hero-panel relative overflow-hidden rounded-3xl px-6 py-8 text-white shadow-[0_30px_60px_-30px_rgba(40,30,120,0.6)] sm:px-10 sm:py-10">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[12.5px] font-medium text-fg-3">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
+          <h1 className="mt-0.5 text-[26px] font-semibold tracking-tight text-fg">{greet}{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h1>
+          <p className="mt-0.5 text-[13.5px] text-fg-3">Here is what happened in your workspace.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={range} onChange={setRange} items={[{ value: "7", label: "7D" }, { value: "30", label: "30D" }, { value: "90", label: "90D" }]} />
+          <NewProject onCreated={reload} />
+          <Button size="sm" asChild><Link href="/new"><Play /> New analysis</Link></Button>
+        </div>
+      </div>
+
+      {isNew && <>
+      <section className="hero-panel relative overflow-hidden rounded-3xl px-6 py-8 animate-in text-white shadow-[0_30px_60px_-30px_rgba(40,30,120,0.6)] sm:px-10 sm:py-10">
         <div className="bg-dots pointer-events-none absolute inset-0 opacity-40 [mask-image:linear-gradient(to_bottom,black,transparent)]" />
         <div className="relative grid items-center gap-8 lg:grid-cols-[1.25fr_1fr]">
           <div>
@@ -151,8 +175,24 @@ export default function Overview() {
           </div>
         </div>
       </section>
+        <GettingStarted onDemo={() => demo("retail")} busy={!!busy} />
+      </>}
+      {!isNew && err && <ErrorNote message={err} />}
 
-      {isNew && <GettingStarted onDemo={() => demo("retail")} busy={!!busy} />}
+      {loading && !data ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[118px] rounded-2xl" />)}</div>
+      ) : (
+        <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {METRICS.map((m) => (
+            <StaggerItem key={m.key}><KpiCard metric={m} win={win?.[m.key]} spark={spark} range={range} active={visible.has(m.key) && visible.size === 1} onSelect={() => setVisible(visible.has(m.key) && visible.size === 1 ? new Set(METRICS.map((x) => x.key)) : new Set([m.key]))} /></StaggerItem>
+          ))}
+        </Stagger>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">{data?.series ? <ActivityChart series={data.series} range={range} visible={visible} onToggle={toggle} /> : <Skeleton className="h-[340px] rounded-2xl" />}</div>
+        {c ? <StatusDonut counts={c} /> : <Skeleton className="h-[340px] rounded-2xl" />}
+      </div>
 
       <Stagger className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StaggerItem><Stat label="Analyses completed" value={c?.completed} icon={CheckCircle2} tone="bg-success-soft text-success" hint={c ? `${c.needs_review} need review · ${c.failed} failed` : undefined} /></StaggerItem>
@@ -188,7 +228,9 @@ export default function Overview() {
           </CardContent>
         </Card>
 
-        <Card>
+        <div className="space-y-6">
+          <ActivityFeed items={data?.activity ?? []} />
+          <Card>
           <CardHeader><div><CardTitle>Try a question</CardTitle><CardDescription>Examples across domains.</CardDescription></div></CardHeader>
           <CardContent className="space-y-1.5">
             {EXAMPLES.map((e) => (
@@ -200,6 +242,7 @@ export default function Overview() {
             ))}
           </CardContent>
         </Card>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

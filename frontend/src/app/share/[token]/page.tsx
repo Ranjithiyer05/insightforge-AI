@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Eye, ShieldCheck, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { humanize, timeAgo } from "@/lib/utils";
+import { LogoMark } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
 import { ErrorNote, Skeleton } from "@/components/ui/misc";
 import { StatusBadge } from "@/components/status";
@@ -19,7 +20,7 @@ export default function SharedReport() {
     <div className="app-bg min-h-screen">
       <header className="border-b border-border/70 bg-surface/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-2.5"><div className="flex size-9 items-center justify-center rounded-xl grad-accent text-white"><Sparkles className="size-[18px]" /></div>
+          <div className="flex items-center gap-2.5"><LogoMark size={34} />
             <div className="leading-tight"><div className="text-[15px] font-semibold text-fg">InsightForge</div><div className="text-[11px] text-fg-3">Shared report</div></div></div>
           <Badge tone="neutral"><Eye /> Read-only</Badge>
         </div>

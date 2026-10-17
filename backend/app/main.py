@@ -21,7 +21,7 @@ from .auth import admin_user, current_user, memory_namespace
 from .agent import MODES, execute_analysis
 from .analyses import REGISTRY
 from .config import settings
-from .db import AskQuery, DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
+from .db import AskQuery, ModelRun, DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
 from .evaluation import execute_evaluation
 from .profiler import apply_cleaning, preview_rows, profile_dataframe
 from .sandbox.executor import netns_available
@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
                 db.delete(d)
         db.commit()
         purge_guests(db)
+        for m in db.scalars(select(ModelRun).where(ModelRun.status.in_(["queued", "running"]))).all():
+            m.status, m.error = "failed", "The server restarted while this model was training. Start it again."
+        db.commit()
     finally:
         db.close()
     yield
@@ -476,6 +479,106 @@ def ask_delete(qid: str, db: Session = Depends(get_session), user: User = Depend
     db.delete(q)
     db.commit()
     return {"deleted": qid}
+
+
+class AutoMLIn(BaseModel):
+    target: str
+    features: list[str] | None = None
+    task: str | None = Field(default=None, pattern="^(classification|regression)$")
+    split: str = Field(default="random", pattern="^(random|time)$")
+    date_col: str | None = None
+    positive_class: str | None = None
+
+
+def _model_dict(m: ModelRun, full: bool = True) -> dict[str, Any]:
+    out = {"id": m.id, "dataset_id": m.dataset_id, "target": m.target, "config": m.config, "status": m.status, "progress": m.progress,
+           "error": m.error, "created_at": m.created_at, "finished_at": m.finished_at}
+    if full:
+        out["result"] = m.result
+    elif m.result:
+        r = m.result
+        out["summary"] = {"task": r["task"], "best_model": r["best_model"], "primary_metric": r["primary_metric"],
+                          "score": r["test_metrics"].get(r["primary_metric"])}
+    return out
+
+
+def _run_automl(mid: str) -> None:
+    from .automl import AutoMLError, train
+    from .db import SessionLocal
+    with SessionLocal() as db:
+        m = db.get(ModelRun, mid)
+        d = db.get(Dataset, m.dataset_id)
+        m.status = "running"
+        db.commit()
+
+        def progress(msg: str) -> None:
+            m.progress = msg[:255]
+            db.commit()
+        try:
+            cfg = m.config or {}
+            max_rows = 20_000 if settings.sandbox_memory_mb <= 512 else 100_000
+            result, blob = train(storage.load_dataset(d.id), d.profile or {}, m.target, cfg.get("features"), cfg.get("task"), cfg.get("split", "random"),
+                                 cfg.get("date_col"), cfg.get("positive_class"), max_rows=max_rows, progress=progress)
+            m.result, m.model_bytes, m.status, m.progress = result, blob, "succeeded", "Done"
+        except AutoMLError as exc:
+            m.status, m.error = "failed", str(exc)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("AutoML run %s failed", mid)
+            m.status, m.error = "failed", f"Training failed ({type(exc).__name__}: {str(exc)[:300]})"
+        m.finished_at = utcnow()
+        db.commit()
+
+
+@app.post("/api/datasets/{did}/automl")
+def start_automl(did: str, body: AutoMLIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    d = get_or_404(db, Dataset, did, user)
+    cols = [c["name"] for c in (d.profile or {}).get("columns", [])]
+    if body.target not in cols:
+        raise HTTPException(422, f"{body.target} is not a column of this dataset.")
+    if body.features and any(f not in cols for f in body.features):
+        raise HTTPException(422, "Unknown feature column.")
+    busy = db.scalar(select(func.count()).select_from(ModelRun).where(ModelRun.owner_id == user.id, ModelRun.status.in_(["queued", "running"])))
+    if busy:
+        raise HTTPException(429, "A model is already training for your account. Wait for it to finish.")
+    m = ModelRun(owner_id=user.id, dataset_id=did, target=body.target, config=body.model_dump(exclude={"target"}))
+    db.add(m)
+    db.commit()
+    pool.submit(_run_automl, m.id)
+    return _model_dict(m)
+
+
+@app.get("/api/datasets/{did}/models")
+def list_models(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    get_or_404(db, Dataset, did, user)
+    rows = db.scalars(select(ModelRun).where(ModelRun.owner_id == user.id, ModelRun.dataset_id == did).order_by(ModelRun.created_at.desc()).limit(30)).all()
+    return [_model_dict(m, full=False) for m in rows]
+
+
+@app.get("/api/models/{mid}")
+def get_model(mid: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    return _model_dict(get_or_404(db, ModelRun, mid, user))
+
+
+class PredictIn(BaseModel):
+    rows: list[dict[str, Any]] = Field(min_length=1, max_length=20)
+    explain: bool = True
+
+
+@app.post("/api/models/{mid}/predict")
+def model_predict(mid: str, body: PredictIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .automl import predict_rows
+    m = get_or_404(db, ModelRun, mid, user)
+    if m.status != "succeeded" or not m.model_bytes:
+        raise HTTPException(409, "This model has not finished training.")
+    return {"predictions": predict_rows(m.model_bytes, body.rows, body.explain)}
+
+
+@app.delete("/api/models/{mid}")
+def delete_model(mid: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    m = get_or_404(db, ModelRun, mid, user)
+    db.delete(m)
+    db.commit()
+    return {"deleted": mid}
 
 
 @app.delete("/api/datasets/{did}")

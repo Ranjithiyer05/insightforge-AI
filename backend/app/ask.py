@@ -529,7 +529,9 @@ def execute(df: pd.DataFrame, s: dict[str, Any]) -> dict[str, Any]:
         out["headline"] = f"{strength.capitalize()} {'positive' if sr > 0 else 'negative'} association between {a} and {b} (Spearman {sr:.2f}, Pearson {pr:.2f}, n = {n:,})." \
             if strength != "no meaningful" else f"No meaningful association between {a} and {b} (Spearman {sr:.2f}, n = {n:,})."
         out["warnings"].append("Correlation is not causation; a third factor may drive both.")
-        out["chart"] = {"id": "ask", "kind": "scatter", "title": f"{b} vs {a}", "data": _records(ns["points"]), "x": a, "series": [{"key": b, "label": b}]}
+        pts = ns["points"].set_axis(["x", "y"], axis=1).apply(pd.to_numeric, errors="coerce")
+        out["chart"] = {"id": "ask", "kind": "scatter", "title": f"{b} vs {a}", "data": _records(pts), "x": "x", "series": [{"key": "y", "label": b}],
+                        "x_label": a, "y_label": b}
     elif op == "distribution":
         counts, edges = ns["counts"], ns["edges"]
         hist = [{"bin": f"{edges[i]:.4g}–{edges[i + 1]:.4g}", "count": int(counts[i])} for i in range(len(counts))]

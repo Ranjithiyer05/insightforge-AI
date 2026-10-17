@@ -63,17 +63,8 @@ export function ChartRenderer({ spec, height = 280 }: { spec: ChartSpec; height?
     chart = (
       <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 8, right: 16, left: horizontal ? 8 : 4, bottom: 0 }} barCategoryGap="22%">
         <CartesianGrid horizontal={!horizontal} vertical={horizontal} strokeDasharray="3 3" />
-        {horizontal ? (
-          <>
-            <XAxis type="number" {...axis} tickFormatter={fmt} />
-            <YAxis type="category" dataKey={spec.x} {...axis} width={130} interval={0} />
-          </>
-        ) : (
-          <>
-            <XAxis dataKey={spec.x} {...axis} minTickGap={8} interval="preserveStartEnd" />
-            <YAxis {...axis} tickFormatter={fmt} width={64} />
-          </>
-        )}
+        {horizontal ? <XAxis type="number" {...axis} tickFormatter={fmt} /> : <XAxis dataKey={spec.x} {...axis} minTickGap={8} interval="preserveStartEnd" />}
+        {horizontal ? <YAxis type="category" dataKey={spec.x} {...axis} width={130} interval={0} /> : <YAxis {...axis} tickFormatter={fmt} width={64} />}
         <Tooltip content={<TooltipBox unit={spec.unit} />} cursor={{ fill: "var(--surface-2)" }} />
         {spec.series.length > 1 && <Legend iconType="circle" iconSize={8} />}
         <ReferenceLine {...(horizontal ? { x: 0 } : { y: 0 })} stroke="var(--border-strong)" />

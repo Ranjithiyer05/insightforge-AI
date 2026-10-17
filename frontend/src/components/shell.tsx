@@ -14,6 +14,8 @@ import { isPublicRoute, useAuth } from "./auth";
 import { useWorkspace } from "./workspace";
 import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownSeparator, DropdownTrigger } from "./ui/dropdown";
 import { Tooltip } from "./ui/misc";
+import { CommandPalette } from "./command-palette";
+import { PageTransition } from "./motion";
 
 const NAV_GROUPS = [
   { label: "Workspace", items: [
@@ -49,7 +51,7 @@ function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean;
     ? NAV_GROUPS.map((g) => (g.label === "System" ? { ...g, items: [...g.items, { href: "/admin", label: "Admin", icon: Shield }] } : g))
     : NAV_GROUPS;
   return (
-    <aside className={cn("sidebar flex h-full flex-col border-r border-[var(--sb-border)] transition-[width] duration-200", collapsed ? "w-[72px]" : "w-64")}>
+    <aside className={cn("sidebar flex h-full flex-col border-r border-[var(--sb-border)] transition-[width] duration-300 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none", collapsed ? "w-[72px]" : "w-64")}>
       <div className="flex h-16 items-center justify-between px-4">
         <Logo collapsed={collapsed} />
         {mobile && <button onClick={onClose} className="rounded-md p-1.5 text-[var(--sb-text-3)] hover:bg-[var(--sb-hover)]" aria-label="Close menu"><X className="size-4" /></button>}
@@ -94,45 +96,12 @@ function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean;
 }
 
 function GlobalSearch() {
-  const [q, setQ] = useState("");
-  const [res, setRes] = useState<any>(null);
-  const [open, setOpen] = useState(false);
-  const router = useRouter();
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (q.trim().length < 2) { setRes(null); return; }
-    const t = setTimeout(() => api(`/search?q=${encodeURIComponent(q.trim())}`).then(setRes).catch(() => {}), 220);
-    return () => clearTimeout(t);
-  }, [q]);
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); ref.current?.querySelector("input")?.focus(); } };
-    document.addEventListener("mousedown", h);
-    document.addEventListener("keydown", k);
-    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", k); };
-  }, []);
-  const go = (href: string) => { setOpen(false); setQ(""); router.push(href); };
-  const total = res ? res.datasets.length + res.analyses.length + res.lessons.length + res.projects.length : 0;
   return (
-    <div ref={ref} className="relative hidden w-full max-w-sm md:block">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-3" />
-      <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder="Search datasets, analyses, lessons…"
-        className="h-9 w-full rounded-xl border border-border bg-surface-2/70 pl-8 pr-12 text-[13px] text-fg placeholder:text-fg-3 outline-none focus:border-accent focus:bg-surface" aria-label="Global search" />
-      <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-surface px-1 text-[10px] text-fg-3">⌘K</kbd>
-      {open && res && (
-        <div className="absolute left-0 right-0 top-10 z-50 max-h-96 overflow-auto rounded-lg border border-border bg-surface p-1 shadow-card scrollbar-thin">
-          {total === 0 && <div className="px-3 py-4 text-center text-[13px] text-fg-3">No matches</div>}
-          {[["Projects", res.projects, (p: any) => [p.name, `/?project=${p.id}`]], ["Datasets", res.datasets, (d: any) => [d.name, `/datasets/${d.id}`]],
-            ["Analyses", res.analyses, (a: any) => [a.question, `/analyses/${a.id}`]], ["Lessons", res.lessons, (l: any) => [l.statement, `/memory?lesson=${l.id}`]]]
-            .filter(([, items]: any) => items.length).map(([label, items, f]: any) => (
-              <div key={label}>
-                <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-fg-3">{label}</div>
-                {items.map((it: any) => { const [t, href] = f(it); return <button key={it.id} onClick={() => go(href)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[13px] text-fg-2 hover:bg-surface-2 hover:text-fg">{t}</button>; })}
-              </div>
-            ))}
-        </div>
-      )}
-    </div>
+    <button onClick={() => window.dispatchEvent(new Event("open-command-palette"))}
+      className="hidden h-9 w-full max-w-sm items-center gap-2 rounded-xl border border-border bg-surface-2/70 px-2.5 text-[13px] text-fg-3 transition hover:border-border-strong hover:text-fg-2 md:flex" aria-label="Open command palette">
+      <Search className="size-4" /> <span className="flex-1 text-left">Search or jump to…</span>
+      <kbd className="rounded border border-border bg-surface px-1 text-[10px]">Ctrl K</kbd>
+    </button>
   );
 }
 
@@ -167,6 +136,17 @@ function ExecStatus() {
         {data.llm.configured ? data.llm.provider : "Deterministic"}
       </div>
     </Tooltip>
+  );
+}
+
+function GuestNotice() {
+  const { user } = useAuth();
+  if (!user?.is_guest) return null;
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-2 border-b border-accent/20 bg-accent-soft px-4 py-2 text-[12.5px] text-accent-text sm:px-6">
+      You are exploring as a guest. This account and its data are deleted automatically within a day.
+      <Link href="/register" className="font-medium underline underline-offset-2">Create an account</Link> to keep your work.
+    </div>
   );
 }
 
@@ -231,11 +211,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="relative h-full w-64 animate-in"><Sidebar collapsed={false} onToggle={() => {}} mobile onClose={() => setMobileOpen(false)} /></div>
         </div>
       )}
+      <CommandPalette />
       <div className="app-bg flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setMobileOpen(true)} />
+        <GuestNotice />
         <StorageNotice />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
-          <div className="mx-auto w-full max-w-[1320px] px-4 py-7 sm:px-6 lg:px-10">{children}</div>
+          <div className="mx-auto w-full max-w-[1320px] px-4 py-7 sm:px-6 lg:px-10"><PageTransition id={path}>{children}</PageTransition></div>
         </main>
       </div>
     </div>

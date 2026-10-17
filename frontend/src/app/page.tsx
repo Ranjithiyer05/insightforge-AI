@@ -15,6 +15,7 @@ import { EmptyState, ErrorNote, Skeleton } from "@/components/ui/misc";
 import { StatusBadge } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth";
+import { AnimatedNumber, Stagger, StaggerItem } from "@/components/motion";
 import { useWorkspace } from "@/components/workspace";
 
 const EXAMPLES = [
@@ -62,6 +63,31 @@ function NewProject({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+function GettingStarted({ onDemo, busy }: { onDemo: () => void; busy: boolean }) {
+  const steps = [
+    { title: "Load data", text: "Upload a CSV or Excel file, or open the synthetic retail demo.", action: <Button size="sm" variant="secondary" asChild><Link href="/new">Upload a file</Link></Button> },
+    { title: "Review its quality", text: "The dataset page shows types, missing values, duplicates and outliers, with one-click fixes you confirm first." },
+    { title: "Ask a question", text: "Type a business question. You get an editable plan, then results with the code and checks behind them." },
+  ];
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-[15px] font-semibold text-fg">Getting started</h2><p className="mt-0.5 text-[13px] text-fg-3">Three steps from a raw file to a checked answer.</p></div>
+        <Button size="sm" onClick={onDemo} disabled={busy}><Play /> {busy ? "Preparing…" : "Run the demo instead"}</Button>
+      </div>
+      <Stagger className="mt-4 grid gap-3 md:grid-cols-3">
+        {steps.map((st, i) => (
+          <StaggerItem key={st.title} className="rounded-xl border border-border p-4">
+            <div className="flex items-center gap-2 text-[13.5px] font-medium text-fg"><span className="flex size-6 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent-text">{i + 1}</span>{st.title}</div>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-3">{st.text}</p>
+            {st.action && <div className="mt-3">{st.action}</div>}
+          </StaggerItem>
+        ))}
+      </Stagger>
+    </Card>
+  );
+}
+
 function Stat({ label, value, icon: Icon, hint, tone }: { label: string; value: any; icon: any; hint?: string; tone: string }) {
   return (
     <Card className="lift relative overflow-hidden p-5">
@@ -70,7 +96,7 @@ function Stat({ label, value, icon: Icon, hint, tone }: { label: string; value: 
         <div className="text-[12.5px] font-medium text-fg-3">{label}</div>
         <div className={`flex size-9 items-center justify-center rounded-xl ${tone}`}><Icon className="size-[18px]" /></div>
       </div>
-      <div className="mt-1 text-[30px] font-semibold leading-none tracking-tight num text-fg">{value ?? "—"}</div>
+      <div className="mt-1 text-[30px] font-semibold leading-none tracking-tight num text-fg"><AnimatedNumber value={value} /></div>
       {hint && <div className="mt-2 text-[12px] text-fg-3">{hint}</div>}
     </Card>
   );
@@ -111,7 +137,7 @@ export default function Overview() {
             <p className="mt-3 text-[12px] text-white/50">Demo datasets are clearly labelled synthetic data and work without any API key.</p>
             {err && <div className="mt-3"><ErrorNote message={err} /></div>}
           </div>
-          <div className="float hidden rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-md lg:block">
+          <div className="hidden rounded-2xl border border-white/12 bg-white/[0.06] p-4 backdrop-blur-md lg:block">
             <div className="mb-3 flex items-center justify-between text-[12px] text-white/60"><span className="font-medium text-white/85">How every analysis runs</span><span>5 stages</span></div>
             <ol className="space-y-2">
               {PIPELINE.map((p, i) => (
@@ -126,12 +152,14 @@ export default function Overview() {
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Analyses completed" value={c?.completed} icon={CheckCircle2} tone="bg-success-soft text-success" hint={c ? `${c.needs_review} need review · ${c.failed} failed` : undefined} />
-        <Stat label="Datasets" value={c?.datasets} icon={Database} tone="bg-info-soft text-info" hint="Private to your account" />
-        <Stat label="Experiments run" value={c?.experiments} icon={Beaker} tone="bg-warning-soft text-warning" hint={data ? `${data.experiment_status.succeeded} succeeded · ${data.experiment_status.weak + data.experiment_status.invalid} weak/invalid` : undefined} />
-        <Stat label="Validated lessons" value={c?.lessons_validated} icon={BrainCircuit} tone="bg-accent-soft text-accent-text" hint={c ? `${c.lessons_candidate} candidate lessons` : undefined} />
-      </section>
+      {isNew && <GettingStarted onDemo={() => demo("retail")} busy={!!busy} />}
+
+      <Stagger className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StaggerItem><Stat label="Analyses completed" value={c?.completed} icon={CheckCircle2} tone="bg-success-soft text-success" hint={c ? `${c.needs_review} need review · ${c.failed} failed` : undefined} /></StaggerItem>
+        <StaggerItem><Stat label="Datasets" value={c?.datasets} icon={Database} tone="bg-info-soft text-info" hint="Private to your account" /></StaggerItem>
+        <StaggerItem><Stat label="Experiments run" value={c?.experiments} icon={Beaker} tone="bg-warning-soft text-warning" hint={data ? `${data.experiment_status.succeeded} succeeded · ${data.experiment_status.weak + data.experiment_status.invalid} weak/invalid` : undefined} /></StaggerItem>
+        <StaggerItem><Stat label="Validated lessons" value={c?.lessons_validated} icon={BrainCircuit} tone="bg-accent-soft text-accent-text" hint={c ? `${c.lessons_candidate} candidate lessons` : undefined} /></StaggerItem>
+      </Stagger>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">

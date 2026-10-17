@@ -39,6 +39,7 @@ class Settings:
     llm_provider: str = field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "none").lower())
     llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", ""))
     db_blob_max_mb: int = field(default_factory=lambda: _int("DB_BLOB_MAX_MB", 25))
+    guest_ttl_hours: int = field(default_factory=lambda: _int("GUEST_TTL_HOURS", 24))
     retention_days: int = field(default_factory=lambda: _int("DATASET_RETENTION_DAYS", 30))
     allow_external_llm_sample_rows: bool = field(default_factory=lambda: _bool("ALLOW_LLM_SAMPLE_ROWS", False))
     cors_origins: list[str] = field(

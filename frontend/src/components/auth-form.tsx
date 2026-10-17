@@ -43,6 +43,7 @@ function Form({ mode }: { mode: "login" | "register" }) {
       <Button type="submit" className="w-full" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}</Button>
       <p className="text-center text-[13px] text-fg-3">
         {mode === "login" ? <>New here? <Link className="text-accent-text hover:underline" href="/register">Create an account</Link></> : <>Already have an account? <Link className="text-accent-text hover:underline" href="/login">Sign in</Link></>}
+        <span className="mt-1 block">Just looking? <Link className="text-accent-text hover:underline" href="/welcome">Try the guest demo</Link></span>
       </p>
     </form>
   );

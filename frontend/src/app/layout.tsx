@@ -5,6 +5,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/auth";
 import { WorkspaceProvider } from "@/components/workspace";
 import { Shell } from "@/components/shell";
+import { MotionProvider } from "@/components/motion";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
@@ -19,11 +20,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${mono.variable}`}>
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <MotionProvider>
           <AuthProvider>
             <WorkspaceProvider>
               <Shell>{children}</Shell>
             </WorkspaceProvider>
           </AuthProvider>
+          </MotionProvider>
         </ThemeProvider>
       </body>
     </html>

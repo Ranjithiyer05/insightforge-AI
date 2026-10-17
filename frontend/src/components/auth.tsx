@@ -3,10 +3,10 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-export type User = { id: string; email: string; name: string; is_admin: boolean };
+export type User = { id: string; email: string; name: string; is_admin: boolean; is_guest?: boolean };
 type Ctx = { user: User | null; loading: boolean; setUser: (u: User | null) => void; logout: () => Promise<void> };
 const AuthCtx = createContext<Ctx>({ user: null, loading: true, setUser: () => {}, logout: async () => {} });
-export const PUBLIC_ROUTES = ["/login", "/register"];
+export const PUBLIC_ROUTES = ["/login", "/register", "/welcome"];
 export const isPublicRoute = (p: string) => PUBLIC_ROUTES.includes(p) || p.startsWith("/share/");
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

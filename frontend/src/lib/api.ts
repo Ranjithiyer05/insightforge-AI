@@ -23,7 +23,7 @@ export async function api<T = any>(path: string, init: RequestInit & { json?: un
       else if (Array.isArray(b.detail)) msg = b.detail.map((d: any) => d.msg).join("; ");
     } catch {}
     if (res.status === 401 && typeof window !== "undefined" && !location.pathname.startsWith("/login") && !location.pathname.startsWith("/register") && !location.pathname.startsWith("/share/")) {
-      location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+      location.href = location.pathname === "/" ? "/welcome" : `/login?next=${encodeURIComponent(location.pathname)}`;
     }
     throw new ApiError(res.status, msg);
   }

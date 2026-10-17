@@ -132,7 +132,7 @@ def should_be_admin(db: Session, email: str) -> bool:
     admins = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
     if email in admins:
         return True
-    return db.scalar(select(User.id).limit(1)) is None  # first account becomes admin
+    return db.scalar(select(User.id).where(User.is_guest.is_(False)).limit(1)) is None  # first real account becomes admin
 
 
 def user_by_email(db: Session, email: str) -> User | None:

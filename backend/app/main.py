@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
                 _delete_dataset_files(d.id)
                 db.delete(d)
         db.commit()
+        purge_guests(db)
     finally:
         db.close()
     yield
@@ -699,7 +700,8 @@ class LoginIn(BaseModel):
 
 
 def user_dict(u: User) -> dict[str, Any]:
-    return {"id": u.id, "email": u.email, "name": u.name or u.email.split("@")[0], "is_admin": u.is_admin, "disabled": u.disabled, "created_at": _iso(u.created_at)}
+    return {"id": u.id, "email": u.email, "name": u.name or u.email.split("@")[0], "is_admin": u.is_admin, "disabled": u.disabled,
+            "is_guest": bool(u.is_guest), "created_at": _iso(u.created_at)}
 
 
 @app.post("/api/auth/register")
@@ -726,6 +728,33 @@ def login(body: LoginIn, request: Request, response: FResponse, db: Session = De
         raise HTTPException(403, "This account has been disabled by an administrator.")
     auth.start_session(db, response, u)
     return user_dict(u)
+
+
+@app.post("/api/auth/guest")
+def guest(response: FResponse, request: Request, db: Session = Depends(get_session)):
+    """One-click demo: a throwaway account (deleted after GUEST_TTL_HOURS) with the retail demo already loaded."""
+    import secrets
+    auth.check_rate(request, "guest")
+    auth.record_fail(request, "guest")  # counts towards the per-address limit so guests cannot be minted in bulk
+    u = User(email=f"guest-{secrets.token_hex(6)}@guest.insightforge", name="Guest", password_hash=auth.hash_password(secrets.token_urlsafe(24)),
+             is_admin=False, is_guest=True)
+    db.add(u)
+    db.commit()
+    fn, label = DEMOS["retail"]
+    raw = (DEMO_DIR / fn).read_bytes()
+    d = _create_dataset(db, u, raw, fn, "csv", storage.parse_bytes(raw, "csv"), None, synthetic=True, name=label)
+    auth.start_session(db, response, u)
+    return {**user_dict(u), "dataset_id": d.id}
+
+
+def purge_guests(db: Session) -> int:
+    cutoff = utcnow() - timedelta(hours=settings.guest_ttl_hours)
+    old = db.scalars(select(User).where(User.is_guest.is_(True), User.created_at < cutoff)).all()
+    for u in old:
+        _wipe_user(db, u.id)
+        db.delete(u)
+    db.commit()
+    return len(old)
 
 
 @app.post("/api/auth/logout")

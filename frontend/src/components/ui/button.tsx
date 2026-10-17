@@ -8,11 +8,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "grad-accent text-white shadow-[0_6px_18px_-6px_rgba(91,76,240,0.6)] hover:brightness-110 active:brightness-95",
+        default: "bg-fg text-bg shadow-xs hover:bg-fg/85",
         secondary: "bg-surface border border-border text-fg hover:bg-surface-2 shadow-xs",
         ghost: "text-fg-2 hover:bg-surface-2 hover:text-fg",
         danger: "bg-danger text-white hover:opacity-90",
-        white: "bg-white text-[#1d1b54] shadow-[0_8px_24px_-8px_rgba(255,255,255,0.45)] hover:bg-white/90",
+        white: "bg-white text-[#111110] hover:bg-white/90",
+        accent: "bg-accent text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_16px_-8px_var(--accent)] hover:bg-accent-hover",
         soft: "bg-accent-soft text-accent-text hover:brightness-95",
         link: "text-accent-text underline-offset-4 hover:underline px-0",
       },

@@ -75,7 +75,7 @@ export function CommandPalette() {
     <D.Root open={open} onOpenChange={setOpen}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=open]:animate-in" />
-        <D.Content aria-describedby={undefined} className="fixed left-1/2 top-[14vh] z-50 w-[min(640px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-border bg-surface shadow-card data-[state=open]:animate-in">
+        <D.Content aria-describedby={undefined} className="fixed left-1/2 top-[14vh] z-50 w-[min(640px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-border bg-surface-solid/95 backdrop-blur-xl shadow-card data-[state=open]:animate-in">
           <D.Title className="sr-only">Command palette</D.Title>
           <div className="flex items-center gap-2 border-b border-border px-4">
             <Search className="size-4 text-fg-3" />

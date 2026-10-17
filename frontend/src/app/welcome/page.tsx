@@ -32,7 +32,7 @@ export default function Welcome() {
     } catch (e: any) { setErr(e.message); setBusy(false); }
   };
   return (
-    <div className="min-h-screen bg-bg text-fg">
+    <div className="relative min-h-screen bg-bg text-fg"><div className="aurora" aria-hidden="true" /><div className="relative">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5">
         <Logo tagline={false} />
         <nav className="flex items-center gap-2">
@@ -44,11 +44,11 @@ export default function Welcome() {
       <section className="relative mx-auto max-w-6xl px-5 pb-16 pt-10 sm:pt-16">
         <Stagger className="max-w-3xl">
           <StaggerItem><span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 text-[12px] text-fg-2"><CheckCircle2 className="size-3.5 text-success" /> Free and open source · no API key required</span></StaggerItem>
-          <StaggerItem><h1 className="mt-5 text-[38px] font-semibold leading-[1.08] tracking-tight sm:text-[54px]">Upload a dataset. Get analysis <span className="text-accent">you can check.</span></h1></StaggerItem>
+          <StaggerItem><h1 className="mt-5 text-[38px] font-semibold leading-[1.08] tracking-tight sm:text-[54px]">Upload a dataset. Get analysis <span className="relative whitespace-nowrap text-accent">you can check.<motion.span aria-hidden="true" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.6, duration: 0.6, ease: [0.22, 1, 0.36, 1] }} className="absolute -bottom-1 left-0 h-[3px] w-full origin-left rounded-full bg-accent/40" /></span></h1></StaggerItem>
           <StaggerItem><p className="mt-5 max-w-2xl text-[16px] leading-relaxed text-fg-2">InsightForge profiles your data, helps you clean it, answers business questions with real code, evaluates models properly and writes a report where every key number has been recomputed from the raw file.</p></StaggerItem>
           <StaggerItem>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Button size="lg" onClick={tryDemo} disabled={busy}>{busy ? "Preparing the demo…" : <>Try the live demo <ArrowRight /></>}</Button>
+              <Button size="lg" variant="accent" className="shine" onClick={tryDemo} disabled={busy}>{busy ? "Preparing the demo…" : <>Try the live demo <ArrowRight /></>}</Button>
               <Button size="lg" variant="secondary" asChild><Link href="/register">Use my own data</Link></Button>
             </div>
             <p className="mt-3 text-[12.5px] text-fg-3">The demo opens a temporary guest workspace with a synthetic retail dataset. It is deleted automatically within a day.</p>
@@ -106,6 +106,6 @@ export default function Welcome() {
         </div>
       </section>
       <footer className="border-t border-border py-6 text-center text-[12px] text-fg-3">InsightForge · <a className="underline" href="https://github.com/Ranjithiyer05/insightforge-AI">Source on GitHub</a></footer>
-    </div>
+    </div></div>
   );
 }

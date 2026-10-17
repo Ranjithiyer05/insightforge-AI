@@ -11,7 +11,7 @@ import { ErrorNote, Skeleton, Tabs } from "./ui/misc";
 function heat(v: number | null) {
   if (v == null) return "transparent";
   const a = Math.min(1, Math.abs(v));
-  return v >= 0 ? `rgba(91, 76, 240, ${0.08 + a * 0.82})` : `rgba(223, 79, 106, ${0.08 + a * 0.82})`;
+  return v >= 0 ? `rgba(240, 86, 29, ${0.08 + a * 0.82})` : `rgba(13, 148, 136, ${0.08 + a * 0.82})`;
 }
 
 function ColumnCard({ c }: { c: any }) {

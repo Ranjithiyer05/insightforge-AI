@@ -50,7 +50,6 @@ export function KpiCard({ metric, win, spark, range, active, onSelect }: { metri
     <button type="button" onClick={onSelect} aria-pressed={active}
       className={cn("kpi group relative w-full overflow-hidden rounded-2xl border bg-surface p-4 text-left shadow-card transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
         active ? "border-accent/50 ring-1 ring-accent/30" : "border-border/80 hover:border-border-strong")}>
-      <div className="pointer-events-none absolute -right-10 -top-10 size-28 rounded-full opacity-[0.14] blur-2xl transition-opacity group-hover:opacity-25" style={{ background: metric.color }} />
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2 text-[12.5px] font-medium text-fg-3">
           <span className="flex size-7 items-center justify-center rounded-lg" style={{ background: `color-mix(in oklab, ${metric.color} 14%, transparent)`, color: metric.color }}><Icon className="size-[15px]" /></span>

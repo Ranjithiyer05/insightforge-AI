@@ -21,12 +21,12 @@ import { Tabs } from "@/components/ui/misc";
 import { ActivityChart, ActivityFeed, KpiCard, METRICS, Range, StatusDonut, bucket } from "@/components/overview-widgets";
 
 const EXAMPLES = [
-  { q: DEMO_QUESTION, tag: "Retail", icon: TrendingDown, tone: "text-[#df4f6a] bg-[#df4f6a]/10" },
-  { q: "Which customers are likely to churn?", tag: "Churn", icon: Users, tone: "text-[#5b4cf0] bg-[#5b4cf0]/10" },
-  { q: "Is there a significant difference in tenure between churned and retained customers?", tag: "Hypothesis test", icon: Scale, tone: "text-[#0ea5a4] bg-[#0ea5a4]/10" },
-  { q: "Forecast revenue for the next 3 months", tag: "Forecasting", icon: LineChart, tone: "text-[#e8a23a] bg-[#e8a23a]/12" },
-  { q: "Compare revenue by region", tag: "Comparison", icon: BarChart3, tone: "text-[#2f6fd6] bg-[#2f6fd6]/10" },
-  { q: "Segment our customers", tag: "Segmentation", icon: Shapes, tone: "text-[#8b5cf6] bg-[#8b5cf6]/10" },
+  { q: DEMO_QUESTION, tag: "Retail", icon: TrendingDown, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
+  { q: "Which customers are likely to churn?", tag: "Churn", icon: Users, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
+  { q: "Is there a significant difference in tenure between churned and retained customers?", tag: "Hypothesis test", icon: Scale, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
+  { q: "Forecast revenue for the next 3 months", tag: "Forecasting", icon: LineChart, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
+  { q: "Compare revenue by region", tag: "Comparison", icon: BarChart3, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
+  { q: "Segment our customers", tag: "Segmentation", icon: Shapes, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
 ];
 
 const PIPELINE = [
@@ -93,7 +93,6 @@ function GettingStarted({ onDemo, busy }: { onDemo: () => void; busy: boolean })
 function Stat({ label, value, icon: Icon, hint, tone }: { label: string; value: any; icon: any; hint?: string; tone: string }) {
   return (
     <Card className="lift relative overflow-hidden p-5">
-      <div className={`pointer-events-none absolute -right-8 -top-8 size-24 rounded-full opacity-60 blur-2xl ${tone}`} />
       <div className="flex items-start justify-between">
         <div className="text-[12.5px] font-medium text-fg-3">{label}</div>
         <div className={`flex size-9 items-center justify-center rounded-xl ${tone}`}><Icon className="size-[18px]" /></div>

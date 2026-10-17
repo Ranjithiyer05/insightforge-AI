@@ -14,7 +14,7 @@ export type ChartSpec = {
   x_label?: string; y_label?: string; diagonal?: boolean; group?: string; band_label?: string;
 };
 
-const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--danger)", "var(--chart-5)"];
 
 function tickFmt(unit?: string) {
   return (v: any) => (typeof v === "number" ? (unit === "currency" ? fmtNum(v, { money: true }) : unit === "%" ? `${fmtNum(v)}%` : fmtNum(v)) : String(v).slice(0, 14));
@@ -71,7 +71,7 @@ export function ChartRenderer({ spec, height = 280 }: { spec: ChartSpec; height?
         {spec.series.map((s, i) => (
           <Bar key={s.key} dataKey={s.key} name={s.label || s.key} stackId={stacked ? "a" : undefined} fill={COLORS[i % 5]} radius={stacked ? 0 : 3} maxBarSize={42}>
             {!stacked && spec.series.length === 1 && data.map((r: any, j: number) => (
-              <Cell key={j} fill={hl.includes(r[spec.x]) ? "var(--chart-4)" : (typeof r[s.key] === "number" && r[s.key] < 0 && spec.unit === "currency") ? "var(--chart-4)" : COLORS[0]} />
+              <Cell key={j} fill={hl.includes(r[spec.x]) ? "var(--danger)" : (typeof r[s.key] === "number" && r[s.key] < 0 && spec.unit === "currency") ? "var(--danger)" : COLORS[0]} />
             ))}
             {spec.error && i === 0 && <ErrorBar dataKey="__err" width={6} stroke="var(--text-2)" direction={horizontal ? "x" : "y"} />}
           </Bar>
@@ -89,7 +89,7 @@ export function ChartRenderer({ spec, height = 280 }: { spec: ChartSpec; height?
         {groups.length > 1 && <Legend iconType="circle" iconSize={8} />}
         {groups.map((g, i) => (
           <Scatter key={String(g)} name={g === null ? spec.y_label || "points" : `${spec.group} ${g}`} data={g === null ? spec.data : spec.data.filter((d) => d[spec.group!] === g)}
-            fill={g === "anomaly" ? "var(--chart-4)" : COLORS[i % 5]} fillOpacity={0.6} />
+            fill={g === "anomaly" ? "var(--danger)" : COLORS[i % 5]} fillOpacity={0.6} />
         ))}
       </ScatterChart>
     );

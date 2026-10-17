@@ -276,7 +276,7 @@ export default function Workspace() {
               <div className="pointer-events-none absolute -right-20 -top-20 size-56 rounded-full bg-accent/10 blur-3xl" />
               <CardContent className="relative pt-5">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-9 items-center justify-center rounded-xl grad-accent text-white"><MessageSquarePlus className="size-4" /></div>
+                  <div className="flex size-9 items-center justify-center rounded-xl grad-accent text-[#111110]"><MessageSquarePlus className="size-4" /></div>
                   <div><div className="text-[14.5px] font-semibold text-fg">Ask a follow-up</div>
                     <div className="text-[12.5px] text-fg-3">Builds on this analysis: same dataset and settings unless your question asks for something different. You review the plan before it runs.</div></div>
                 </div>

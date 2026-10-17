@@ -114,7 +114,7 @@ function NewAnalysis() {
           const done = (i === 0 && dataset) || (i === 1 && dataset && question);
           const active = (i === 0 && !dataset) || (i === 1 && dataset && !question) || (i === 2 && dataset && question);
           return <li key={s} className="flex items-center gap-2">
-            <span className={cn("flex size-5 items-center justify-center rounded-full text-[11px] font-semibold", done ? "bg-success text-white" : active ? "bg-accent text-white" : "bg-surface-3 text-fg-3")}>{done ? <CheckCircle2 className="size-3.5" /> : i + 1}</span>
+            <span className={cn("flex size-5 items-center justify-center rounded-full text-[11px] font-semibold", done ? "bg-success text-white" : active ? "bg-accent text-[#111110]" : "bg-surface-3 text-fg-3")}>{done ? <CheckCircle2 className="size-3.5" /> : i + 1}</span>
             <span className={active ? "font-medium text-fg" : "text-fg-3"}>{s}</span>{i < 3 && <span className="mx-1 h-px w-6 bg-border-strong" />}
           </li>;
         })}

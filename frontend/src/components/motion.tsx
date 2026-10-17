@@ -50,3 +50,16 @@ export function AnimatedNumber({ value, format = (n) => Math.round(n).toLocaleSt
 }
 
 export { motion };
+
+/** Reveals a heading word by word, each sliding up from behind a mask. */
+export function SplitText({ text, className, delay = 0 }: { text: string; className?: string; delay?: number }) {
+  return (
+    <span className={className} aria-label={text}>
+      {text.split(" ").map((w, i) => (
+        <span key={i} aria-hidden="true" className="inline-block overflow-hidden pb-[0.08em] align-bottom">
+          <motion.span className="inline-block" initial={{ y: "105%" }} animate={{ y: 0 }} transition={{ delay: delay + i * 0.05, duration: 0.6, ease }}>{w}{" "}</motion.span>
+        </span>
+      ))}
+    </span>
+  );
+}

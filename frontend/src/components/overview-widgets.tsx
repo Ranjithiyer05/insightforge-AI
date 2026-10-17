@@ -34,7 +34,7 @@ export function bucket(series: any[], range: Range) {
 const fmtDay = (d: string) => new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 function Trend({ pct, prev, cur }: { pct: number | null; prev: number; cur: number }) {
-  if (pct === null) return <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11.5px] font-medium text-fg-3" title="No activity in the previous period to compare with"><Minus className="size-3" />{cur > 0 ? "new" : "no change"}</span>;
+  if (pct === null) return <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11.5px] font-medium text-fg-3" title="No activity in the previous period to compare with"><Minus className="size-3" />{cur > 0 ? "new" : "flat"}</span>;
   const up = pct > 0, flat = pct === 0;
   return (
     <span className={cn("inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11.5px] font-semibold num", flat ? "bg-surface-2 text-fg-3" : up ? "bg-success-soft text-success" : "bg-danger-soft text-danger")}>
@@ -43,28 +43,26 @@ function Trend({ pct, prev, cur }: { pct: number | null; prev: number; cur: numb
   );
 }
 
-export function KpiCard({ metric, win, spark, range, active, onSelect }: { metric: (typeof METRICS)[number]; win: any; spark: any[]; range: Range; active: boolean; onSelect: () => void }) {
+export function KpiCard({ metric, win, spark, range, active, onSelect, index }: { metric: (typeof METRICS)[number]; win: any; spark: any[]; range: Range; active: boolean; onSelect: () => void; index: number }) {
   const max = Math.max(1, ...spark.map((r) => r[metric.key]));
   const Icon = metric.icon;
   return (
     <button type="button" onClick={onSelect} aria-pressed={active}
-      className={cn("kpi group relative w-full overflow-hidden rounded-2xl border bg-surface p-4 text-left shadow-card transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
-        active ? "border-accent/50 ring-1 ring-accent/30" : "border-border/80 hover:border-border-strong")}>
+      className={cn("kpi group relative w-full rounded-xl border bg-surface p-4 text-left shadow-card transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+        active ? "border-accent/60" : "border-border hover:border-border-strong")}>
+      <span className="hud-corners" aria-hidden="true" />
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-[12.5px] font-medium text-fg-3">
-          <span className="flex size-7 items-center justify-center rounded-lg" style={{ background: `color-mix(in oklab, ${metric.color} 14%, transparent)`, color: metric.color }}><Icon className="size-[15px]" /></span>
-          {metric.label}
-        </span>
+        <span className="hud-label flex min-w-0 items-center gap-2 truncate whitespace-nowrap"><b>{String(index + 1).padStart(2, "0")}</b>{metric.label}<Icon className="size-3.5" /></span>
         <Trend pct={win?.change_pct ?? null} prev={win?.previous ?? 0} cur={win?.current ?? 0} />
       </div>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div>
-          <div className="text-[28px] font-semibold leading-none tracking-tight text-fg num"><AnimatedNumber value={win?.current} /></div>
+          <div className="font-display text-[44px] font-medium leading-none tracking-tighter text-fg num"><AnimatedNumber value={win?.current} /></div>
           <div className="mt-1.5 text-[11.5px] text-fg-3">vs <span className="num">{win?.previous ?? 0}</span> in the previous {range} days</div>
         </div>
         <div className="flex h-10 items-end gap-[3px]" aria-hidden="true">
           {spark.slice(-14).map((r, i) => (
-            <motion.span key={r.date} className="w-[5px] rounded-sm" style={{ background: metric.color, opacity: r[metric.key] ? 0.85 : 0.18 }}
+            <motion.span key={r.date} className="w-[5px] rounded-sm" style={{ background: active ? "var(--accent)" : "var(--text)", opacity: r[metric.key] ? 0.9 : 0.15 }}
               initial={{ height: 2 }} animate={{ height: Math.max(2, (r[metric.key] / max) * 40) }} transition={{ delay: 0.15 + i * 0.025, type: "spring", stiffness: 260, damping: 24 }} />
           ))}
         </div>
@@ -77,9 +75,9 @@ export function ActivityChart({ series, range, visible, onToggle }: { series: an
   const data = useMemo(() => bucket(series, range), [series, range]);
   const empty = data.every((r) => METRICS.every((m) => !r[m.key]));
   return (
-    <Card className="overflow-hidden">
+    <Card className="scan-once overflow-hidden">
       <CardHeader className="flex-wrap">
-        <div><CardTitle>Workspace activity</CardTitle><CardDescription>{range === "90" ? "Weekly totals" : "Daily totals"} over the last {range} days. Click a series to show or hide it.</CardDescription></div>
+        <div><div className="hud-label mb-1">[ <b>02</b> Telemetry ]</div><CardTitle>Workspace activity</CardTitle><CardDescription>{range === "90" ? "Weekly totals" : "Daily totals"} over the last {range} days. Click a series to show or hide it.</CardDescription></div>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Series">
           {METRICS.map((m) => (
             <button key={m.key} onClick={() => onToggle(m.key)} aria-pressed={visible.has(m.key)}
@@ -129,7 +127,7 @@ export function StatusDonut({ counts }: { counts: any }) {
   const shown = hover !== null ? rows[hover] : null;
   return (
     <Card>
-      <CardHeader><div><CardTitle>Analysis outcomes</CardTitle><CardDescription>All analyses in your workspace.</CardDescription></div></CardHeader>
+      <CardHeader><div><div className="hud-label mb-1">[ <b>03</b> Outcomes ]</div><CardTitle>Analysis outcomes</CardTitle><CardDescription>All analyses in your workspace.</CardDescription></div></CardHeader>
       <CardContent>
         <div className="relative mx-auto h-[170px] w-[170px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -164,7 +162,7 @@ const FEED_TONE: Record<string, string> = { analysis: "bg-accent-soft text-accen
 export function ActivityFeed({ items }: { items: any[] }) {
   return (
     <Card>
-      <CardHeader><div><CardTitle>Recent activity</CardTitle><CardDescription>Analyses, questions, models and alerts.</CardDescription></div></CardHeader>
+      <CardHeader><div><div className="hud-label mb-1">[ <b>05</b> Log ]</div><CardTitle>Recent activity</CardTitle><CardDescription>Analyses, questions, models and alerts.</CardDescription></div></CardHeader>
       <CardContent>
         {items.length ? (
           <ol className="relative space-y-0.5 before:absolute before:left-[15px] before:top-3 before:bottom-3 before:w-px before:bg-border">
@@ -187,5 +185,20 @@ export function ActivityFeed({ items }: { items: any[] }) {
         ) : <p className="py-6 text-center text-[13px] text-fg-3">Nothing yet. Your work will show up here.</p>}
       </CardContent>
     </Card>
+  );
+}
+
+/** A scrolling strip of real workspace numbers, in the style of a race-timing ticker. */
+export function Ticker({ items }: { items: { label: string; value: string | number }[] }) {
+  const row = items.map((it, i) => (
+    <span key={i} className="flex items-center gap-2 px-6 font-mono text-[11.5px] uppercase tracking-[0.14em] text-fg-3">
+      <span className="size-1.5 rounded-full bg-accent" />{it.label}<b className="font-medium text-fg num">{it.value}</b>
+    </span>
+  ));
+  return (
+    <div className="marquee relative overflow-hidden border-y border-border py-2.5 [mask-image:linear-gradient(90deg,transparent,black_8%,black_92%,transparent)]" aria-label="Workspace totals">
+      <div className="marquee-track" aria-hidden="true">{row}{row}{row}{row}</div>
+      <ul className="sr-only">{items.map((it, i) => <li key={i}>{it.label}: {it.value}</li>)}</ul>
+    </div>
   );
 }

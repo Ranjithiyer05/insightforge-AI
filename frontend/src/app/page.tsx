@@ -15,10 +15,10 @@ import { EmptyState, ErrorNote, Skeleton } from "@/components/ui/misc";
 import { StatusBadge } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth";
-import { AnimatedNumber, Stagger, StaggerItem } from "@/components/motion";
+import { AnimatedNumber, SplitText, Stagger, StaggerItem } from "@/components/motion";
 import { useWorkspace } from "@/components/workspace";
 import { Tabs } from "@/components/ui/misc";
-import { ActivityChart, ActivityFeed, KpiCard, METRICS, Range, StatusDonut, bucket } from "@/components/overview-widgets";
+import { ActivityChart, ActivityFeed, KpiCard, METRICS, Range, StatusDonut, Ticker, bucket } from "@/components/overview-widgets";
 
 const EXAMPLES = [
   { q: DEMO_QUESTION, tag: "Retail", icon: TrendingDown, tone: "text-fg-2 bg-surface-2 ring-1 ring-inset ring-border" },
@@ -129,9 +129,9 @@ export default function Overview() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-[12.5px] font-medium text-fg-3">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p>
-          <h1 className="mt-0.5 text-[26px] font-semibold tracking-tight text-fg">{greet}{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h1>
-          <p className="mt-0.5 text-[13.5px] text-fg-3">Here is what happened in your workspace.</p>
+          <p className="hud-label">[ <b>Live</b> ] {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} <span className="blink text-accent-text">_</span></p>
+          <h1 className="mt-3 text-[40px] font-semibold leading-[0.95] tracking-tight text-fg sm:text-[56px]"><SplitText text={`${greet}${user?.name ? `, ${user.name.split(" ")[0]}` : ""}.`} /></h1>
+          <p className="mt-3 text-[14px] text-fg-3">Here is what happened in your workspace.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Tabs value={range} onChange={setRange} items={[{ value: "7", label: "7D" }, { value: "30", label: "30D" }, { value: "90", label: "90D" }]} />
@@ -139,6 +139,12 @@ export default function Overview() {
           <Button size="sm" asChild><Link href="/new"><Play /> New analysis</Link></Button>
         </div>
       </div>
+
+      {c && <Ticker items={[
+        { label: "Datasets", value: c.datasets }, { label: "Analyses", value: c.analyses }, { label: "Completed", value: c.completed },
+        { label: "Needs review", value: c.needs_review }, { label: "Experiments", value: c.experiments }, { label: "Validated lessons", value: c.lessons_validated },
+        { label: "Evaluations", value: c.evaluations }, { label: "Projects", value: c.projects },
+      ]} />}
 
       {isNew && <>
       <section className="hero-panel relative overflow-hidden rounded-3xl px-6 py-8 animate-in text-white shadow-[0_30px_60px_-30px_rgba(40,30,120,0.6)] sm:px-10 sm:py-10">
@@ -182,8 +188,8 @@ export default function Overview() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[118px] rounded-2xl" />)}</div>
       ) : (
         <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {METRICS.map((m) => (
-            <StaggerItem key={m.key}><KpiCard metric={m} win={win?.[m.key]} spark={spark} range={range} active={visible.has(m.key) && visible.size === 1} onSelect={() => setVisible(visible.has(m.key) && visible.size === 1 ? new Set(METRICS.map((x) => x.key)) : new Set([m.key]))} /></StaggerItem>
+          {METRICS.map((m, i) => (
+            <StaggerItem key={m.key}><KpiCard index={i} metric={m} win={win?.[m.key]} spark={spark} range={range} active={visible.has(m.key) && visible.size === 1} onSelect={() => setVisible(visible.has(m.key) && visible.size === 1 ? new Set(METRICS.map((x) => x.key)) : new Set([m.key]))} /></StaggerItem>
           ))}
         </Stagger>
       )}

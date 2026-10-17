@@ -1,8 +1,8 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Card({ className, ...p }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("card-surface rounded-2xl border border-border/80 bg-surface shadow-card", className)} {...p} />;
+export function Card({ className, children, ...p }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("card-surface rounded-xl border border-border bg-surface shadow-card", className)} {...p}><span className="hud-corners" aria-hidden="true" />{children}</div>;
 }
 export function CardHeader({ className, ...p }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex items-start justify-between gap-3 px-5 pt-4 pb-3", className)} {...p} />;

@@ -2,6 +2,7 @@
 import * as React from "react";
 import * as T from "@radix-ui/react-tooltip";
 import { motion } from "motion/react";
+import { SplitText } from "../motion";
 import { cn } from "@/lib/utils";
 
 export function Skeleton({ className }: { className?: string }) {
@@ -67,11 +68,12 @@ export function EmptyState({ icon: Icon, title, description, action }: { icon: R
   );
 }
 
-export function PageHeader({ title, description, actions }: { title: string; description?: React.ReactNode; actions?: React.ReactNode }) {
+export function PageHeader({ title, description, actions, kicker }: { title: string; description?: React.ReactNode; actions?: React.ReactNode; kicker?: string }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
       <div>
-        <h1 className="text-[26px] font-semibold tracking-tight text-fg">{title}</h1>
+        <div className="hud-label mb-2">[ <b>{kicker || "Workspace"}</b> ]</div>
+        <h1 className="text-[30px] font-semibold leading-none tracking-tight text-fg sm:text-[36px]"><SplitText text={title} /></h1>
         {description && <p className="mt-1.5 max-w-2xl text-[14px] text-fg-3">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

@@ -51,7 +51,7 @@ function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean;
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-3 scrollbar-thin">
         {groups.map((g) => (
           <div key={g.label}>
-            {!collapsed && <div className="mb-1.5 px-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--sb-text-3)]">{g.label}</div>}
+            {!collapsed && <div className="mb-1.5 px-2.5 hud-label">{`// ${g.label}`}</div>}
             <div className="space-y-0.5">
               {g.items.map((it) => {
                 const active = it.href === "/" ? path === "/" : path.startsWith(it.href);
@@ -60,7 +60,7 @@ function Sidebar({ collapsed, onToggle, mobile, onClose }: { collapsed: boolean;
                     className={cn("group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-medium transition-colors",
                       active ? "text-[var(--sb-text-strong)]" : "text-[var(--sb-text)] hover:bg-[var(--sb-hover)] hover:text-[var(--sb-text-strong)]", collapsed && "justify-center px-0")}>
                     {active && <motion.span layoutId="nav-active" className="absolute inset-0 -z-0 rounded-[inherit] border border-[var(--sb-border)] shadow-xs" style={{ background: "var(--sb-active)" }} transition={{ type: "spring", stiffness: 480, damping: 38 }} />}
-                    <it.icon className={cn("relative size-[18px] shrink-0", active ? "text-accent" : "text-[var(--sb-text-3)] group-hover:text-[var(--sb-text-strong)]")} />
+                    <it.icon className={cn("relative size-[18px] shrink-0", active ? "text-accent-text" : "text-[var(--sb-text-3)] group-hover:text-[var(--sb-text-strong)]")} />
                     {!collapsed && <span className="relative">{it.label}</span>}
                   </Link>
                 );
@@ -169,7 +169,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
       <ExecStatus />
       <ThemeSwitch />
       <Dropdown>
-        <DropdownTrigger className="flex size-8 items-center justify-center rounded-full bg-accent text-[12px] font-semibold text-white ring-2 ring-surface shadow-xs" aria-label="Profile menu">
+        <DropdownTrigger className="flex size-8 items-center justify-center rounded-full bg-accent text-[12px] font-semibold text-[#111110] ring-2 ring-surface shadow-xs" aria-label="Profile menu">
           {(user?.name || user?.email || "?").slice(0, 1).toUpperCase()}
         </DropdownTrigger>
         <DropdownContent>

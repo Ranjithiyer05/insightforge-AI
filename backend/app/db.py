@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from .config import settings
@@ -215,13 +215,45 @@ class ShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-engine = create_engine(settings.database_url, connect_args=_connect_args, future=True)
+class DatasetBlob(Base):
+    """Compressed copy of a dataset file, so uploads survive restarts on hosts whose disk is wiped."""
+    __tablename__ = "dataset_blobs"
+    dataset_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+engine = create_engine(settings.database_url, connect_args=_connect_args, future=True, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+if settings.database_url.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(conn, _record):
+        cur = conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")  # honour ON DELETE CASCADE
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.close()
+
+
+def _add_missing_columns() -> None:
+    """Additive migration: create columns that newer code expects on tables created by older versions."""
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have or col.primary_key:
+                    continue
+                ddl = col.type.compile(dialect=engine.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
 
 
 def init_db() -> None:
     settings.ensure_dirs()
     Base.metadata.create_all(engine)
+    _add_missing_columns()
 
 
 def get_session() -> Iterator[Session]:

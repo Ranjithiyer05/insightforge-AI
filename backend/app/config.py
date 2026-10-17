@@ -38,6 +38,7 @@ class Settings:
     retry_budget: int = field(default_factory=lambda: _int("RETRY_BUDGET", 2))
     llm_provider: str = field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "none").lower())
     llm_model: str = field(default_factory=lambda: os.environ.get("LLM_MODEL", ""))
+    db_blob_max_mb: int = field(default_factory=lambda: _int("DB_BLOB_MAX_MB", 25))
     retention_days: int = field(default_factory=lambda: _int("DATASET_RETENTION_DAYS", 30))
     allow_external_llm_sample_rows: bool = field(default_factory=lambda: _bool("ALLOW_LLM_SAMPLE_ROWS", False))
     cors_origins: list[str] = field(
@@ -46,8 +47,17 @@ class Settings:
 
     def __post_init__(self) -> None:
         self.data_dir = Path(self.data_dir).resolve()
+        if self.database_url.startswith("postgres://"):
+            self.database_url = "postgresql+psycopg://" + self.database_url[len("postgres://"):]
+        elif self.database_url.startswith("postgresql://"):
+            self.database_url = "postgresql+psycopg://" + self.database_url[len("postgresql://"):]
         if not self.database_url:
             self.database_url = f"sqlite:///{self.data_dir / 'insightforge.db'}"
+
+    @property
+    def persistent_db(self) -> bool:
+        """False when the database is SQLite under the data directory, which free hosts wipe on restart."""
+        return not self.database_url.startswith("sqlite") or _bool("STORAGE_PERSISTENT", False)
 
     @property
     def uploads_dir(self) -> Path:

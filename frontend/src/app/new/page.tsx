@@ -15,7 +15,6 @@ import { ColumnTable, QualitySummary } from "@/components/dataset-profile";
 import { useWorkspace } from "@/components/workspace";
 import { DEMO_QUESTION } from "@/lib/demo";
 
-const MAX_MB = 50;
 
 function suggestions(profile: any): string[] {
   const r = profile.roles || {};
@@ -33,7 +32,7 @@ function suggestions(profile: any): string[] {
   return Array.from(new Set(out)).slice(0, 6);
 }
 
-function Dropzone({ onFile, disabled }: { onFile: (f: File) => void; disabled?: boolean }) {
+function Dropzone({ onFile, disabled, maxMb }: { onFile: (f: File) => void; disabled?: boolean; maxMb: number }) {
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -45,7 +44,7 @@ function Dropzone({ onFile, disabled }: { onFile: (f: File) => void; disabled?: 
         over ? "border-accent bg-accent-soft/50" : "border-border-strong hover:border-accent/50 hover:bg-surface-2/50", disabled && "pointer-events-none opacity-60")}>
       <div className="mb-3 flex size-11 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><UploadCloud className="size-5" /></div>
       <p className="text-sm font-medium text-fg">Drop a CSV or Excel file here, or click to browse</p>
-      <p className="mt-1 text-[12.5px] text-fg-3">.csv, .xlsx or .xlsm · up to {MAX_MB} MB · treated as untrusted input and kept private to your account</p>
+      <p className="mt-1 text-[12.5px] text-fg-3">.csv, .xlsx or .xlsm · up to {maxMb} MB · treated as untrusted input and kept private to your account</p>
       <input ref={input} type="file" accept=".csv,.xlsx,.xlsm" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }} />
     </div>
   );
@@ -63,6 +62,8 @@ function NewAnalysis() {
   const [question, setQuestion] = useState(sp.get("q") || "");
   const [planning, setPlanning] = useState(false);
   const { data: library } = useApi<any[]>("/datasets");
+  const { data: status } = useApi<any>("/status");
+  const MAX_MB: number = status?.limits?.max_upload_mb ?? 20; // the server's limit, so large files fail before uploading
 
   const loadDataset = useCallback(async (id: string) => {
     const [d, p] = await Promise.all([api(`/datasets/${id}`), api(`/datasets/${id}/preview?limit=50`)]);
@@ -122,7 +123,7 @@ function NewAnalysis() {
           <Card className="lg:col-span-2">
             <CardHeader><div><CardTitle>Upload a dataset</CardTitle><CardDescription>Files are validated, parsed safely (no formulas or macros run) and stored under a random id.</CardDescription></div></CardHeader>
             <CardContent className="space-y-3">
-              <Dropzone onFile={onFile} disabled={progress !== null} />
+              <Dropzone onFile={onFile} disabled={progress !== null} maxMb={MAX_MB} />
               {progress !== null && fileInfo && (
                 <div className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-center justify-between text-[13px]"><span className="flex items-center gap-2"><FileSpreadsheet className="size-4 text-fg-3" />{fileInfo.name}</span><span className="num text-fg-3">{progress < 100 ? `${progress}%` : "Profiling…"}</span></div>

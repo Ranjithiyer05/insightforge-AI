@@ -9,7 +9,11 @@
 """
 from __future__ import annotations
 
+import csv
+import gzip
 import hashlib
+import threading
+from collections import OrderedDict
 import io
 import re
 from pathlib import Path
@@ -56,7 +60,7 @@ def parse_bytes(raw: bytes, kind: str, sheet: str | int | None = 0) -> pd.DataFr
         if text is None:
             raise UploadError("Could not decode the CSV file as text.")
         try:
-            df = pd.read_csv(io.StringIO(text), sep=None, engine="python", nrows=settings.max_rows + 1)
+            df = pd.read_csv(io.StringIO(text), sep=sniff_delimiter(text[:65536].rsplit("\n", 1)[0]), nrows=settings.max_rows + 1, low_memory=False)
         except Exception as exc:  # pandas raises many types
             raise UploadError(f"Could not parse the CSV file: {str(exc)[:200]}") from exc
     else:
@@ -70,6 +74,14 @@ def parse_bytes(raw: bytes, kind: str, sheet: str | int | None = 0) -> pd.DataFr
         raise UploadError(f"The file has more than {settings.max_rows:,} rows, which exceeds the configured limit.")
     df.columns = _dedupe_columns([str(c).strip() or f"column_{i+1}" for i, c in enumerate(df.columns)])
     return df
+
+
+def sniff_delimiter(sample: str) -> str:
+    """Pick the delimiter from a text sample so the fast C parser can be used."""
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+    except csv.Error:
+        return ","
 
 
 def _dedupe_columns(cols: list[str]) -> list[str]:
@@ -93,7 +105,42 @@ def store_dataframe(dataset_id: str, df: pd.DataFrame) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / "data.csv"
     df.to_csv(path, index=False)
+    _save_blob(dataset_id, path)
     return path
+
+
+def _save_blob(dataset_id: str, path: Path) -> None:
+    """Keep a gzip copy in the database so the file survives restarts on hosts with an ephemeral disk."""
+    from .db import DatasetBlob, SessionLocal
+    data = gzip.compress(path.read_bytes(), compresslevel=6)
+    if len(data) > settings.db_blob_max_mb * 1024 * 1024:
+        return  # too large for the database copy; the disk copy is still used
+    db = SessionLocal()
+    try:
+        db.merge(DatasetBlob(dataset_id=dataset_id, data=data))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _restore_blob(dataset_id: str, path: Path) -> bool:
+    from .db import DatasetBlob, SessionLocal
+    db = SessionLocal()
+    try:
+        blob = db.get(DatasetBlob, dataset_id)
+        if blob is None:
+            return False
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(gzip.decompress(blob.data))
+        tmp.replace(path)
+        return True
+    finally:
+        db.close()
+
+
+class DatasetFileMissing(FileNotFoundError):
+    pass
 
 
 def dataset_path(dataset_id: str) -> Path:
@@ -102,11 +149,36 @@ def dataset_path(dataset_id: str) -> Path:
     path = (settings.uploads_dir / dataset_id / "data.csv").resolve()
     if settings.uploads_dir.resolve() not in path.parents:
         raise ValueError("path escapes the uploads directory")
+    if not path.exists() and not _restore_blob(dataset_id, path):
+        raise DatasetFileMissing("The data file for this dataset is no longer on the server (it was removed by a restart or retention). Upload it again.")
     return path
 
 
+_cache: "OrderedDict[str, tuple[float, pd.DataFrame]]" = OrderedDict()
+_cache_lock = threading.Lock()
+_CACHE_SIZE = 4
+
+
 def load_dataset(dataset_id: str) -> pd.DataFrame:
-    return pd.read_csv(dataset_path(dataset_id))
+    """Parsed dataset, cached by file modification time. Callers get a copy so the cache is never mutated."""
+    path = dataset_path(dataset_id)
+    mtime = path.stat().st_mtime
+    with _cache_lock:
+        hit = _cache.get(dataset_id)
+        if hit and hit[0] == mtime:
+            _cache.move_to_end(dataset_id)
+            return hit[1].copy()
+    df = pd.read_csv(path, low_memory=False)
+    with _cache_lock:
+        _cache[dataset_id] = (mtime, df)
+        while len(_cache) > _CACHE_SIZE:
+            _cache.popitem(last=False)
+    return df.copy()
+
+
+def forget_dataset(dataset_id: str) -> None:
+    with _cache_lock:
+        _cache.pop(dataset_id, None)
 
 
 def sha256(raw: bytes) -> str:

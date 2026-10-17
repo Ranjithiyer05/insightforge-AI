@@ -91,7 +91,9 @@ class ExecResult:
 
 def _limits(mem_mb: int, cpu_s: int):
     def apply():
-        resource.setrlimit(resource.RLIMIT_AS, (mem_mb * 1024 * 1024, mem_mb * 1024 * 1024))
+        # RLIMIT_DATA caps heap and anonymous mappings (real allocations) rather than reserved
+        # address space, which OpenBLAS and thread stacks inflate far beyond actual use.
+        resource.setrlimit(resource.RLIMIT_DATA, (mem_mb * 1024 * 1024, mem_mb * 1024 * 1024))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_s, cpu_s + 1))
         resource.setrlimit(resource.RLIMIT_FSIZE, (200 * 1024 * 1024, 200 * 1024 * 1024))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))

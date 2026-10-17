@@ -21,7 +21,7 @@ from .auth import admin_user, current_user, memory_namespace
 from .agent import MODES, execute_analysis
 from .analyses import REGISTRY
 from .config import settings
-from .db import ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
+from .db import DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
 from .evaluation import execute_evaluation
 from .profiler import apply_cleaning, preview_rows, profile_dataframe
 from .sandbox.executor import netns_available
@@ -49,6 +49,9 @@ async def lifespan(app: FastAPI):
         if settings.retention_days > 0:
             cutoff = utcnow() - timedelta(days=settings.retention_days)
             for d in db.scalars(select(Dataset).where(Dataset.created_at < cutoff)).all():
+                for a in db.scalars(select(Analysis).where(Analysis.dataset_id == d.id)).all():
+                    shutil.rmtree(settings.runs_dir / a.id, ignore_errors=True)
+                    db.delete(a)
                 _delete_dataset_files(d.id)
                 db.delete(d)
         db.commit()
@@ -60,6 +63,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="InsightForge AI", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.exception_handler(storage.DatasetFileMissing)
+def _missing_file(_request: Request, exc: storage.DatasetFileMissing):
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": str(exc)}, status_code=410)
 
 
 # ---------------- helpers ----------------
@@ -123,6 +132,16 @@ def _delete_dataset_files(dataset_id: str) -> None:
     folder = (settings.uploads_dir / dataset_id).resolve()
     if settings.uploads_dir.resolve() in folder.parents and folder.exists():
         shutil.rmtree(folder)
+    storage.forget_dataset(dataset_id)
+    from .db import SessionLocal
+    s = SessionLocal()
+    try:
+        blob = s.get(DatasetBlob, dataset_id)
+        if blob is not None:
+            s.delete(blob)
+            s.commit()
+    finally:
+        s.close()
 
 
 def _create_dataset(db: Session, user: User, raw: bytes, filename: str, kind: str, df, project_id: str | None, synthetic: bool, name: str | None = None) -> Dataset:
@@ -141,7 +160,10 @@ def _create_dataset(db: Session, user: User, raw: bytes, filename: str, kind: st
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "storage": {"persistent": settings.persistent_db,
+                                    "message": None if settings.persistent_db else
+                                    "This server keeps data on a temporary disk. Accounts and datasets are erased when it restarts "
+                                    "(free hosting restarts after inactivity). Set DATABASE_URL to a Postgres database to keep them."}}
 
 
 @app.get("/api/status")
@@ -152,6 +174,7 @@ def status(db: Session = Depends(get_session), user: User = Depends(current_user
                                              "memory_mb": settings.sandbox_memory_mb},
             "running_analyses": running, "running_evaluations": evals, "agent": agent_settings(db, user),
             "limits": {"max_upload_mb": settings.max_upload_mb, "max_rows": settings.max_rows},
+            "storage_persistent": settings.persistent_db,
             "retention_days": settings.retention_days, "methods": sorted(REGISTRY)}
 
 
@@ -225,9 +248,10 @@ def delete_project(pid: str, confirm: bool = False, db: Session = Depends(get_se
 # ---------------- datasets ----------------
 
 @app.post("/api/datasets/upload")
-async def upload_dataset(file: UploadFile = File(...), project_id: str | None = Form(None), sheet: str | None = Form(None), db: Session = Depends(get_session), user: User = Depends(current_user)):
+def upload_dataset(file: UploadFile = File(...), project_id: str | None = Form(None), sheet: str | None = Form(None), db: Session = Depends(get_session), user: User = Depends(current_user)):
+    # Plain `def`: FastAPI runs it in a worker thread, so parsing a large file never blocks the event loop.
     limit = settings.max_upload_mb * 1024 * 1024
-    raw = await file.read(limit + 1)
+    raw = file.file.read(limit + 1)
     if len(raw) > limit:
         raise HTTPException(413, f"File is larger than the {settings.max_upload_mb} MB limit.")
     if not raw:

@@ -170,6 +170,18 @@ function ExecStatus() {
   );
 }
 
+function StorageNotice() {
+  const { data } = useApi<any>("/health");
+  const [hidden, setHidden] = useState(false);
+  if (!data || data.storage?.persistent !== false || hidden) return null;
+  return (
+    <div role="status" className="flex items-start gap-2 border-b border-warning/30 bg-warning-soft px-4 py-2 text-[12.5px] text-warning sm:px-6">
+      <span className="flex-1">{data.storage.message}</span>
+      <button onClick={() => setHidden(true)} className="rounded p-0.5 hover:bg-warning/10" aria-label="Dismiss notice"><X className="size-3.5" /></button>
+    </div>
+  );
+}
+
 function Topbar({ onMenu }: { onMenu: () => void }) {
   const { user, logout } = useAuth();
   const { current } = useWorkspace();
@@ -221,6 +233,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       )}
       <div className="app-bg flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setMobileOpen(true)} />
+        <StorageNotice />
         <main className="flex-1 overflow-y-auto scrollbar-thin">
           <div className="mx-auto w-full max-w-[1320px] px-4 py-7 sm:px-6 lg:px-10">{children}</div>
         </main>

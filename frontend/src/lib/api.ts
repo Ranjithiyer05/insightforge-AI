@@ -31,7 +31,7 @@ export async function api<T = any>(path: string, init: RequestInit & { json?: un
   return (ct.includes("application/json") ? res.json() : (res.blob() as any)) as Promise<T>;
 }
 
-export function uploadWithProgress(file: File, projectId: string | null, onProgress: (pct: number) => void): Promise<any> {
+export function uploadWithProgress(file: File, projectId: string | null, onProgress: (pct: number) => void, sheet?: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/datasets/upload");
@@ -47,6 +47,7 @@ export function uploadWithProgress(file: File, projectId: string | null, onProgr
     const fd = new FormData();
     fd.append("file", file);
     if (projectId) fd.append("project_id", projectId);
+    if (sheet) fd.append("sheet", sheet);
     xhr.send(fd);
   });
 }

@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, Textarea } from "@/components/ui/input";
 import { ErrorNote, PageHeader, Progress, Skeleton } from "@/components/ui/misc";
 import { Badge } from "@/components/ui/badge";
-import { DataGrid } from "@/components/data-grid";
+import { PagedPreview } from "@/components/paged-preview";
 import { ColumnTable, QualitySummary } from "@/components/dataset-profile";
 import { useWorkspace } from "@/components/workspace";
 import { DEMO_QUESTION } from "@/lib/demo";
@@ -73,15 +73,17 @@ function NewAnalysis() {
 
   useEffect(() => { const id = sp.get("dataset"); if (id) loadDataset(id).catch((e) => setErr(e.message)); }, [sp]); // eslint-disable-line
 
-  const onFile = async (f: File) => {
+  const [lastFile, setLastFile] = useState<File | null>(null);
+  const onFile = async (f: File, sheet?: string) => {
     setErr(null);
+    setLastFile(f);
     const ext = f.name.split(".").pop()?.toLowerCase();
     if (!["csv", "xlsx", "xlsm"].includes(ext || "")) return setErr("Unsupported file type. Upload a .csv, .xlsx or .xlsm file.");
     if (f.size > MAX_MB * 1024 * 1024) return setErr(`The file is ${fmtBytes(f.size)}, above the ${MAX_MB} MB limit.`);
     setFileInfo({ name: f.name, size: f.size });
     setProgress(0);
     try {
-      const d = await uploadWithProgress(f, current.projectId || null, setProgress);
+      const d = await uploadWithProgress(f, current.projectId || null, setProgress, sheet);
       await loadDataset(d.id);
     } catch (e: any) { setErr(e.message); } finally { setProgress(null); }
   };
@@ -100,6 +102,7 @@ function NewAnalysis() {
       router.push(`/analyses/${a.id}`);
     } catch (e: any) { setErr(e.message); setPlanning(false); }
   };
+  const otherSheets: string[] = dataset?.sheet_names?.length > 1 ? dataset.sheet_names : [];
   const sugg = useMemo(() => (dataset ? suggestions(dataset.profile) : []), [dataset]);
   const types = useMemo(() => Object.fromEntries((dataset?.profile.columns || []).map((c: any) => [c.name, c.semantic_type.replace("_", " ")])), [dataset]);
 
@@ -161,10 +164,18 @@ function NewAnalysis() {
                 <CardDescription>{dataset.n_rows.toLocaleString()} rows · {dataset.n_cols} columns · {fmtBytes(dataset.size_bytes)} · quality score {(dataset.quality_score * 100).toFixed(0)}/100</CardDescription></div>
               <Button variant="ghost" size="sm" onClick={() => { setDataset(null); setPreview(null); }}>Change data</Button>
             </CardHeader>
+            {otherSheets.length > 0 && lastFile && (
+              <div className="mx-5 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info-soft px-3 py-2 text-[12.5px] text-info">
+                This workbook has {otherSheets.length} sheets; the first one was loaded. Load a different sheet:
+                <Select className="h-8 w-48" defaultValue="" onChange={(e) => e.target.value && onFile(lastFile, e.target.value)} aria-label="Sheet">
+                  <option value="" disabled>Choose a sheet…</option>{otherSheets.map((sh) => <option key={sh}>{sh}</option>)}
+                </Select>
+              </div>
+            )}
             <CardContent className="grid gap-5 xl:grid-cols-5">
               <div className="xl:col-span-3 space-y-2">
-                <div className="text-[12.5px] font-medium text-fg-2">Preview (first 50 rows)</div>
-                {preview ? <DataGrid columns={preview.columns} rows={preview.rows} types={types} maxHeight={340} dense /> : <Skeleton className="h-64" />}
+                <div className="text-[12.5px] font-medium text-fg-2">Preview</div>
+                <PagedPreview datasetId={dataset.id} types={types} pageSize={25} maxHeight={340} />
               </div>
               <div className="xl:col-span-2 space-y-2">
                 <div className="text-[12.5px] font-medium text-fg-2">Data-quality summary</div>

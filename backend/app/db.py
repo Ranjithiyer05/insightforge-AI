@@ -70,6 +70,8 @@ class Dataset(Base):
     is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False)
     profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     cleaning_log: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # the version this one was cleaned from
+    sheet_names: Mapped[list[Any]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     project: Mapped[Project | None] = relationship(back_populates="datasets")
 

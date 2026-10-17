@@ -172,6 +172,41 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
                 issues.append({"severity": "warning", "kind": "unparseable_dates", "column": col,
                                "message": f"{unparsed} values in '{col}' could not be parsed as dates.",
                                "suggested_fix": None, "destructive": False})
+        nn = s.dropna()
+        if stype not in ("empty",) and n_rows > 1 and nn.nunique() == 1 and missing == 0:
+            issues.append({"severity": "warning", "kind": "constant_column", "column": col,
+                           "message": f"'{col}' has the same value in every row, so it carries no information.", "suggested_fix": "drop_column", "destructive": True})
+        if pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s):
+            txt = nn.astype(str)
+            if len(txt):
+                ws = int((txt != txt.str.strip()).sum())
+                if ws:
+                    issues.append({"severity": "info", "kind": "whitespace", "column": col,
+                                   "message": f"{ws:,} values in '{col}' have leading or trailing spaces.", "suggested_fix": "normalize_text", "destructive": False})
+                if stype not in ("datetime",):
+                    num = pd.to_numeric(txt.str.replace(r"[,\s$€£%]", "", regex=True), errors="coerce")
+                    ok = float(num.notna().mean())
+                    if 0.8 <= ok < 1.0 or (ok == 1.0 and txt.str.contains(r"[,$€£%]").any()):
+                        bad = txt[num.isna()].unique()[:5].tolist()
+                        info["invalid_examples"] = bad
+                        issues.append({"severity": "warning", "kind": "numeric_as_text", "column": col,
+                                       "message": f"'{col}' looks numeric ({ok:.0%} of values) but is stored as text" + (f"; values that are not numbers: {', '.join(map(str, bad))}" if bad else "") + ".",
+                                       "suggested_fix": "convert_type", "destructive": False})
+                if stype == "datetime":
+                    shapes = txt.head(500).str.replace(r"\d", "9", regex=True).value_counts()
+                    if len(shapes) > 1 and shapes.iloc[1] / shapes.sum() > 0.02:
+                        info["date_formats"] = shapes.head(4).index.tolist()
+                        issues.append({"severity": "info", "kind": "dates_as_text", "column": col,
+                                       "message": f"'{col}' mixes date formats ({', '.join(shapes.head(3).index)}).", "suggested_fix": "parse_dates", "destructive": False})
+        if stype in ("numeric", "integer") and "stats" in info:
+            x = pd.to_numeric(s, errors="coerce").dropna()
+            if len(x):
+                m = x.mode()
+                info["stats"].update({"mode": _finite(m.iloc[0]) if len(m) else None, "variance": _finite(x.var()),
+                                      "kurtosis": _finite(x.kurt()) if len(x) > 3 else None, "iqr": _finite(x.quantile(.75) - x.quantile(.25))})
+        if stype in ("categorical", "boolean", "categorical_numeric", "text", "identifier"):
+            m = nn.mode()
+            info["mode"] = (str(m.iloc[0])[:60] if len(m) else None)
         if stype == "empty":
             issues.append({"severity": "warning", "kind": "empty_column", "column": col,
                            "message": f"'{col}' is entirely empty.", "suggested_fix": "drop_column", "destructive": True})
@@ -192,6 +227,10 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
             roles.setdefault(role, []).append(col)
         columns.append(info)
 
+    redundant = _redundant_columns(df, columns)
+    for r in redundant:
+        issues.append({"severity": "info", "kind": "redundant_column", "column": r["column"], "message": r["message"],
+                       "suggested_fix": "drop_column", "destructive": True})
     candidate_targets = _candidate_targets(df, columns)
     leakage = _leakage_hints(df, columns, candidate_targets)
     for lk in leakage:
@@ -217,12 +256,40 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
         "numeric_columns": numeric_cols,
         "categorical_columns": categorical_cols,
         "datetime_columns": datetime_cols,
+        "identifier_columns": [c["name"] for c in columns if c["semantic_type"] == "identifier" or "id" in c["roles"]],
+        "text_columns": [c["name"] for c in columns if c["semantic_type"] == "text"],
+        "redundant_columns": redundant,
         "candidate_targets": candidate_targets,
         "leakage_hints": leakage,
         "issues": issues,
         "quality_score": round(quality_score, 3),
         "notes": ["Semantic types and roles are heuristics based on column names and values; review them before relying on them."],
     }
+
+
+def _redundant_columns(df: pd.DataFrame, columns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Columns that duplicate another column exactly, or numeric columns almost perfectly correlated with an earlier one."""
+    out: list[dict[str, Any]] = []
+    names = [c["name"] for c in columns if c["semantic_type"] != "empty"]
+    seen: dict[int, str] = {}
+    for n in names:
+        try:
+            h = int(pd.util.hash_pandas_object(df[n].astype("string"), index=False).sum())
+        except Exception:
+            continue
+        if h in seen and df[n].astype("string").equals(df[seen[h]].astype("string")):
+            out.append({"column": n, "duplicate_of": seen[h], "message": f"'{n}' is identical to '{seen[h]}'."})
+        else:
+            seen.setdefault(h, n)
+    num = [c["name"] for c in columns if c["semantic_type"] in ("numeric", "integer") and c["name"] not in {o["column"] for o in out}][:30]
+    if len(num) >= 2 and len(df) >= 30:
+        corr = df[num].apply(pd.to_numeric, errors="coerce").corr().abs()
+        for i, a in enumerate(num):
+            for b in num[i + 1:]:
+                v = corr.loc[a, b]
+                if pd.notna(v) and v > 0.995 and b not in {o["column"] for o in out}:
+                    out.append({"column": b, "duplicate_of": a, "message": f"'{b}' is almost perfectly correlated with '{a}' (|r| = {v:.3f}); it may be redundant (for example a derived total)."})
+    return out[:15]
 
 
 def _candidate_targets(df: pd.DataFrame, columns: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -315,62 +382,11 @@ def preview_rows(df: pd.DataFrame, n: int = 50) -> list[dict[str, Any]]:
 
 def apply_cleaning(df: pd.DataFrame, ops: list[dict[str, Any]]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     """Apply user-approved cleaning operations; returns new frame and an audit log."""
-    out = df.copy()
-    log = []
-    for op in ops:
-        kind = op.get("op")
-        before = len(out)
-        if kind == "drop_duplicates":
-            out = out.drop_duplicates()
-            log.append({"op": kind, "rows_removed": before - len(out)})
-        elif kind == "normalize_categories":
-            col = op["column"]
-            if col not in out.columns:
-                raise ValueError(f"unknown column {col}")
-            original = out[col].copy()
-            norm = out[col].astype(str).str.strip()
-            key = norm.str.lower().str.replace(r"[\s_\-]+", " ", regex=True)
-            canonical = norm.groupby(key).agg(lambda v: v.value_counts().index[0])
-            out[col] = key.map(canonical).where(original.notna(), None)
-            log.append({"op": kind, "column": col, "values_changed": int((original.astype(str) != out[col].astype(str)).sum())})
-        elif kind == "drop_column":
-            col = op["column"]
-            out = out.drop(columns=[col])
-            log.append({"op": kind, "column": col})
-        elif kind == "drop_missing_rows":
-            col = op["column"]
-            out = out[out[col].notna()]
-            log.append({"op": kind, "column": col, "rows_removed": before - len(out)})
-        elif kind == "fill_missing":
-            col, method = op["column"], op.get("method", "median")
-            if col not in out.columns:
-                raise ValueError(f"unknown column {col}")
-            n = int(out[col].isna().sum())
-            if method in ("median", "mean"):
-                num = pd.to_numeric(out[col], errors="coerce")
-                if num.notna().sum() == 0:
-                    raise ValueError(f"'{col}' is not numeric; use mode or constant")
-                fill = float(num.median() if method == "median" else num.mean())
-                out[col] = num.fillna(fill)
-            elif method == "mode":
-                m = out[col].mode(dropna=True)
-                if m.empty:
-                    raise ValueError(f"'{col}' has no values to take a mode from")
-                fill = m.iloc[0]
-                out[col] = out[col].fillna(fill)
-            elif method == "constant":
-                fill = op.get("value")
-                if fill is None or str(fill) == "":
-                    raise ValueError("a constant value is required")
-                if pd.api.types.is_numeric_dtype(out[col]):
-                    fill = float(fill)
-                out[col] = out[col].fillna(fill)
-            else:
-                raise ValueError(f"unknown fill method '{method}'")
-            log.append({"op": kind, "column": col, "method": method, "value": _finite(fill) if not isinstance(fill, str) else fill, "cells_filled": n})
-        else:
-            raise ValueError(f"unsupported cleaning operation '{kind}'")
-    return out, log
+    from .cleaning import CleaningError, run_operations
+    try:
+        return run_operations(df, ops)
+    except CleaningError as exc:
+        raise ValueError(str(exc)) from None
 
 
 HANDLING = {

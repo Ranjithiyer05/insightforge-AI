@@ -84,6 +84,17 @@ def sniff_delimiter(sample: str) -> str:
         return ","
 
 
+def excel_sheets(raw: bytes) -> list[str]:
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        names = list(wb.sheetnames)
+        wb.close()
+        return names
+    except Exception:
+        return []
+
+
 def _dedupe_columns(cols: list[str]) -> list[str]:
     seen: dict[str, int] = {}
     out = []

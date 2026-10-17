@@ -82,7 +82,8 @@ def ds_dict(d: Dataset, with_profile: bool = False) -> dict[str, Any]:
     out = {"id": d.id, "name": d.name, "original_filename": d.original_filename, "file_type": d.file_type, "size_bytes": d.size_bytes,
            "n_rows": d.n_rows, "n_cols": d.n_cols, "is_synthetic": d.is_synthetic, "project_id": d.project_id, "created_at": _iso(d.created_at),
            "sha256": d.sha256, "quality_score": (d.profile or {}).get("quality_score"),
-           "issues": len([i for i in (d.profile or {}).get("issues", []) if i["severity"] == "warning"]), "cleaning_log": d.cleaning_log}
+           "issues": len([i for i in (d.profile or {}).get("issues", []) if i["severity"] == "warning"]), "cleaning_log": d.cleaning_log,
+           "parent_id": d.parent_id, "sheet_names": d.sheet_names or []}
     if with_profile:
         out["profile"] = d.profile
     return out
@@ -265,6 +266,11 @@ def upload_dataset(file: UploadFile = File(...), project_id: str | None = Form(N
     if project_id:
         get_or_404(db, Project, project_id, user)
     d = _create_dataset(db, user, raw, file.filename or "dataset.csv", kind, df, project_id, synthetic=False)
+    if kind == "excel":
+        d.sheet_names = storage.excel_sheets(raw)
+        if sheet:
+            d.name = f"{d.name} [{sheet}]"
+        db.commit()
     return ds_dict(d, with_profile=True)
 
 
@@ -328,11 +334,89 @@ def clean_dataset(did: str, body: CleanIn, db: Session = Depends(get_session), u
         cleaned, log_ = apply_cleaning(df, body.operations)
     except (ValueError, KeyError) as exc:
         raise HTTPException(400, str(exc)) from None
+    if cleaned.shape[1] == 0 or cleaned.shape[0] == 0:
+        raise HTTPException(400, "These steps would leave no rows or no columns, so nothing was saved.")
     raw = cleaned.to_csv(index=False).encode()
-    nd = _create_dataset(db, user, raw, d.original_filename, d.file_type, cleaned, d.project_id, d.is_synthetic, name=f"{d.name} (cleaned)")
-    nd.cleaning_log = (d.cleaning_log or []) + [{"from_dataset": d.id, "at": utcnow().isoformat(), "operations": log_}]
+    base = d.name.split(" (cleaned")[0]
+    version = 2 + sum(1 for e in (d.cleaning_log or []))
+    nd = _create_dataset(db, user, raw, d.original_filename, d.file_type, cleaned, d.project_id, d.is_synthetic, name=f"{base} (cleaned v{version})")
+    nd.parent_id = d.id
+    nd.cleaning_log = (d.cleaning_log or []) + [{"from_dataset": d.id, "from_name": d.name, "at": utcnow().isoformat(), "operations": log_,
+                                                  "rows_before": int(len(df)), "rows_after": int(len(cleaned)),
+                                                  "columns_before": int(df.shape[1]), "columns_after": int(cleaned.shape[1])}]
     db.commit()
     return ds_dict(nd, with_profile=True)
+
+
+class CleanPreviewIn(BaseModel):
+    operations: list[dict[str, Any]] = Field(max_length=50)
+
+
+@app.post("/api/datasets/{did}/clean/preview")
+def clean_preview(did: str, body: CleanPreviewIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Dry run: what the steps would change, with matched before/after rows. Nothing is saved."""
+    from .cleaning import CleaningError, run_operations, side_by_side
+    get_or_404(db, Dataset, did, user)
+    df = storage.load_dataset(did)
+    try:
+        cleaned, log_ = run_operations(df, body.operations)
+    except CleaningError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return {"log": log_, "rows_before": int(len(df)), "rows_after": int(len(cleaned)), "columns_before": list(df.columns), "columns_after": list(cleaned.columns),
+            "comparison": side_by_side(df, cleaned, log_)}
+
+
+@app.get("/api/datasets/{did}/clean/suggestions")
+def clean_suggestions(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .cleaning import OPS, suggest
+    d = get_or_404(db, Dataset, did, user)
+    return {"suggestions": suggest(d.profile or {}), "operations": OPS}
+
+
+@app.get("/api/datasets/{did}/lineage")
+def lineage(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """The chain of versions this dataset was cleaned from, and versions cleaned from it."""
+    d = get_or_404(db, Dataset, did, user)
+    chain, cur, guard = [], d, 0
+    while cur is not None and guard < 50:
+        chain.append({"id": cur.id, "name": cur.name, "n_rows": cur.n_rows, "n_cols": cur.n_cols, "created_at": _iso(cur.created_at)})
+        cur = db.get(Dataset, cur.parent_id) if cur.parent_id else None
+        if cur is not None and cur.owner_id != user.id:
+            break
+        guard += 1
+    children = [{"id": c.id, "name": c.name, "created_at": _iso(c.created_at)} for c in
+                db.scalars(select(Dataset).where(Dataset.owner_id == user.id, Dataset.parent_id == did)).all()]
+    return {"chain": list(reversed(chain)), "children": children, "history": d.cleaning_log or []}
+
+
+@app.get("/api/datasets/{did}/download")
+def download_dataset(did: str, format: str = Query("csv", pattern="^(csv|xlsx)$"), db: Session = Depends(get_session), user: User = Depends(current_user)):
+    import io as _io
+    d = get_or_404(db, Dataset, did, user)
+    df = storage.load_dataset(did)
+    safe = df.apply(lambda col: col.map(storage.csv_safe) if col.dtype == object else col)
+    stem = storage.safe_display_name(d.name).replace(" ", "_")[:80] or "dataset"
+    if format == "xlsx":
+        buf = _io.BytesIO()
+        safe.to_excel(buf, index=False, engine="openpyxl")
+        return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'})
+    return Response(safe.to_csv(index=False).encode(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'})
+
+
+_eda_cache: dict[str, dict[str, Any]] = {}
+
+
+@app.get("/api/datasets/{did}/eda")
+def dataset_eda(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .eda import run_eda
+    d = get_or_404(db, Dataset, did, user)
+    key = f"{did}:{d.sha256}"
+    if key not in _eda_cache:
+        if len(_eda_cache) > 16:
+            _eda_cache.pop(next(iter(_eda_cache)))
+        _eda_cache[key] = run_eda(storage.load_dataset(did), d.profile or {})
+    return _eda_cache[key]
 
 
 @app.delete("/api/datasets/{did}")

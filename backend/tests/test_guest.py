@@ -41,3 +41,4 @@ def test_overview_activity_is_real():
     assert today["datasets"] >= 1 and sum(r["datasets"] for r in o["series"]) == o["counts"]["datasets"]
     w = o["windows"]["7"]["datasets"]
     assert w["current"] == o["counts"]["datasets"] and w["previous"] == 0 and w["change_pct"] is None
+

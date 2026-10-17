@@ -8,7 +8,7 @@ export const DropdownTrigger = M.Trigger;
 export function DropdownContent({ className, ...p }: M.DropdownMenuContentProps) {
   return (
     <M.Portal>
-      <M.Content sideOffset={6} align="end" className={cn("z-50 min-w-48 rounded-xl border border-border bg-surface-solid/95 p-1.5 shadow-[0_20px_50px_-20px_rgba(40,20,120,0.45)] backdrop-blur-xl pop-in", className)} {...p} />
+      <M.Content sideOffset={6} align="end" className={cn("z-50 min-w-48 rounded-xl border border-border bg-surface-solid/95 p-1.5 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.35)] backdrop-blur-xl pop-in", className)} {...p} />
     </M.Portal>
   );
 }

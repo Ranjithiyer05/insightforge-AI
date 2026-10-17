@@ -1,5 +1,6 @@
 "use client";
 import { Logo } from "@/components/logo";
+import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -48,11 +49,20 @@ export default function Welcome() {
           <StaggerItem><p className="mt-5 max-w-2xl text-[16px] leading-relaxed text-fg-2">InsightForge profiles your data, helps you clean it, answers business questions with real code, evaluates models properly and writes a report where every key number has been recomputed from the raw file.</p></StaggerItem>
           <StaggerItem>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Button size="lg" variant="accent" className="shine" onClick={tryDemo} disabled={busy}>{busy ? "Preparing the demo…" : <>Try the live demo <ArrowRight /></>}</Button>
-              <Button size="lg" variant="secondary" asChild><Link href="/register">Use my own data</Link></Button>
+              <Button size="lg" variant="accent" className="shine" asChild><Link href="/register">Get started free <ArrowRight /></Link></Button>
+              <Button size="lg" variant="secondary" asChild><Link href="/login">Sign in</Link></Button>
+              <Dialog>
+                <DialogTrigger asChild><Button size="lg" variant="ghost">Try a guest demo</Button></DialogTrigger>
+                <DialogContent title="Continue as a guest?" description="You'll get a temporary workspace with a synthetic retail dataset. It is deleted automatically within a day, and nothing you do there is kept.">
+                  <div className="flex justify-end gap-2">
+                    <DialogClose asChild><Button variant="secondary">Cancel</Button></DialogClose>
+                    <Button onClick={tryDemo} disabled={busy}>{busy ? "Preparing the demo…" : "Continue as guest"}</Button>
+                  </div>
+                  {err && <div className="mt-3"><ErrorNote message={err} /></div>}
+                </DialogContent>
+              </Dialog>
             </div>
-            <p className="mt-3 text-[12.5px] text-fg-3">The demo opens a temporary guest workspace with a synthetic retail dataset. It is deleted automatically within a day.</p>
-            {err && <div className="mt-3 max-w-md"><ErrorNote message={err} /></div>}
+            <p className="mt-3 text-[12.5px] text-fg-3">Create an account to keep your work. The guest demo is optional and always asks first.</p>
           </StaggerItem>
         </Stagger>
 

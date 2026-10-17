@@ -9,6 +9,7 @@ import { PagedPreview } from "@/components/paged-preview";
 import { QualityDashboard } from "@/components/quality-dashboard";
 import { CleaningWorkspace } from "@/components/cleaning-workspace";
 import { EdaView } from "@/components/eda-view";
+import { AskData } from "@/components/ask-data";
 import { Dropdown, DropdownContent, DropdownItem, DropdownTrigger } from "@/components/ui/dropdown";
 import { useApi } from "@/lib/hooks";
 import { fmtBytes, timeAgo } from "@/lib/utils";
@@ -32,7 +33,7 @@ function DatasetDetail() {
   const { data: d, error } = useApi<any>(`/datasets/${id}`);
   const sp = useSearchParams();
   const [del, setDel] = useState<any | null>(null);
-  type Tab = "overview" | "quality" | "clean" | "insights" | "explore" | "missing";
+  type Tab = "overview" | "quality" | "clean" | "ask" | "insights" | "explore" | "missing";
   const [tab, setTabState] = useState<Tab>((sp.get("tab") as Tab) || "overview");
   const setTab = (t: Tab) => { setTabState(t); try { history.replaceState(null, "", `?tab=${t}`); } catch {} };
   const { setCurrent } = useWorkspace();
@@ -52,9 +53,10 @@ function DatasetDetail() {
       </div>
       {d.parent_id && <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12.5px] text-fg-2"><GitBranch className="size-4 text-fg-3" /> Cleaned version with {d.cleaning_log.reduce((n: number, h: any) => n + h.operations.length, 0)} recorded steps. <button className="text-accent-text hover:underline" onClick={() => setTab("clean")}>See history and earlier versions</button></div>}
       <Tabs value={tab} onChange={setTab} items={[{ value: "overview", label: "Overview" }, { value: "quality", label: "Quality", count: d.issues }, { value: "clean", label: "Clean" },
-        { value: "insights", label: "Insights" }, { value: "explore", label: "Explore columns" }, { value: "missing", label: "Missing values", count: d.profile.columns.filter((c: any) => c.missing > 0).length }]} />
+        { value: "ask", label: "Ask" }, { value: "insights", label: "Insights" }, { value: "explore", label: "Explore columns" }, { value: "missing", label: "Missing values", count: d.profile.columns.filter((c: any) => c.missing > 0).length }]} />
       {tab === "quality" && <QualityDashboard dataset={d} />}
       {tab === "clean" && <CleaningWorkspace dataset={d} onCleaned={(nd) => router.push(`/datasets/${nd.id}?tab=clean`)} />}
+      {tab === "ask" && <AskData datasetId={d.id} />}
       {tab === "insights" && <EdaView datasetId={d.id} />}
       {tab === "explore" && <DatasetExplorer id={d.id} />}
       {tab === "missing" && <Card><CardHeader><div><CardTitle>Missing values</CardTitle><CardDescription>{d.profile.missing_cells?.toLocaleString?.() ?? 0} missing cells ({((d.profile.missing_pct || 0) * 100).toFixed(2)}% of all cells)</CardDescription></div></CardHeader><CardContent><MissingValues dataset={d} onCleaned={(nd) => router.push(`/datasets/${nd.id}`)} /></CardContent></Card>}

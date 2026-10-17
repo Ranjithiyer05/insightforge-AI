@@ -218,6 +218,19 @@ class ShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AskQuery(Base):
+    """A question asked of a dataset, with the validated spec that answered it (for history and re-running)."""
+    __tablename__ = "ask_queries"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("q"))
+    owner_id: Mapped[str] = mapped_column(String(32), index=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
+    question: Mapped[str] = mapped_column(Text)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON)
+    headline: Mapped[str] = mapped_column(Text, default="")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class DatasetBlob(Base):
     """Compressed copy of a dataset file, so uploads survive restarts on hosts whose disk is wiped."""
     __tablename__ = "dataset_blobs"

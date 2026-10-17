@@ -21,7 +21,7 @@ from .auth import admin_user, current_user, memory_namespace
 from .agent import MODES, execute_analysis
 from .analyses import REGISTRY
 from .config import settings
-from .db import DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
+from .db import AskQuery, DatasetBlob, ShareLink, Analysis, AppSetting, AuthSession, Dataset, EvaluationRun, Experiment, Lesson, Project, User, get_session, init_db, new_id, utcnow
 from .evaluation import execute_evaluation
 from .profiler import apply_cleaning, preview_rows, profile_dataframe
 from .sandbox.executor import netns_available
@@ -417,6 +417,65 @@ def dataset_eda(did: str, db: Session = Depends(get_session), user: User = Depen
             _eda_cache.pop(next(iter(_eda_cache)))
         _eda_cache[key] = run_eda(storage.load_dataset(did), d.profile or {})
     return _eda_cache[key]
+
+
+class AskIn(BaseModel):
+    question: str | None = Field(default=None, max_length=500)
+    spec: dict[str, Any] | None = None
+
+
+@app.post("/api/datasets/{did}/ask")
+def ask_dataset(did: str, body: AskIn, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Answer a natural-language question with generated pandas code; the code shown is the code run."""
+    from .ask import AskError, answer
+    d = get_or_404(db, Dataset, did, user)
+    if not body.question and not body.spec:
+        raise HTTPException(400, "Ask a question.")
+    try:
+        res = answer(storage.load_dataset(did), d.profile or {}, body.question, body.spec)
+    except AskError as exc:
+        raise HTTPException(422, str(exc)) from None
+    q = AskQuery(owner_id=user.id, dataset_id=did, question=(body.question or res["interpretation"])[:500], spec=res["spec"], headline=res.get("headline", "")[:500])
+    db.add(q)
+    db.commit()
+    return {"id": q.id, **res}
+
+
+@app.get("/api/datasets/{did}/ask/suggestions")
+def ask_suggestions(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    from .ask import Schema, suggestions
+    d = get_or_404(db, Dataset, did, user)
+    s = Schema(storage.load_dataset(did), d.profile or {})
+    return {"suggestions": suggestions(s), "llm": llm.available(),
+            "schema": {"columns": s.cols, "numeric": s.numeric, "dates": s.dates, "categorical": s.categorical}}
+
+
+@app.get("/api/datasets/{did}/ask/history")
+def ask_history(did: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    get_or_404(db, Dataset, did, user)
+    rows = db.scalars(select(AskQuery).where(AskQuery.owner_id == user.id, AskQuery.dataset_id == did)
+                      .order_by(AskQuery.pinned.desc(), AskQuery.created_at.desc()).limit(50)).all()
+    return [{"id": r.id, "question": r.question, "spec": r.spec, "headline": r.headline, "pinned": r.pinned, "created_at": r.created_at} for r in rows]
+
+
+@app.post("/api/ask/{qid}/pin")
+def ask_pin(qid: str, pinned: bool = True, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    q = db.get(AskQuery, qid)
+    if not q or q.owner_id != user.id:
+        raise HTTPException(404, "Not found")
+    q.pinned = pinned
+    db.commit()
+    return {"id": qid, "pinned": pinned}
+
+
+@app.delete("/api/ask/{qid}")
+def ask_delete(qid: str, db: Session = Depends(get_session), user: User = Depends(current_user)):
+    q = db.get(AskQuery, qid)
+    if not q or q.owner_id != user.id:
+        raise HTTPException(404, "Not found")
+    db.delete(q)
+    db.commit()
+    return {"deleted": qid}
 
 
 @app.delete("/api/datasets/{did}")

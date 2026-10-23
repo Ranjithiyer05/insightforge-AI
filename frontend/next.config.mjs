@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  output: "standalone",
   // API calls are proxied to FastAPI by src/app/api/[...path]/route.ts, which reads
   // BACKEND_URL at runtime, so the same build works on any host.
   async headers() {

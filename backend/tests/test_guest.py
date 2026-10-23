@@ -42,3 +42,16 @@ def test_overview_activity_is_real():
     w = o["windows"]["7"]["datasets"]
     assert w["current"] == o["counts"]["datasets"] and w["previous"] == 0 and w["change_pct"] is None
 
+
+
+def test_purge_guest_with_dataset_does_not_lock():
+    c = TestClient(app, headers={"x-forwarded-for": "10.4.4.4"})
+    body = c.post("/api/auth/guest").json()
+    db = SessionLocal()
+    u = db.get(User, body["id"])
+    u.created_at = utcnow() - timedelta(days=3)
+    db.commit()
+    from app.db import DatasetBlob
+    assert purge_guests(db) >= 1
+    assert db.get(DatasetBlob, body["dataset_id"]) is None
+    db.close()

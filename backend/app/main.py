@@ -52,13 +52,17 @@ async def lifespan(app: FastAPI):
                 for a in db.scalars(select(Analysis).where(Analysis.dataset_id == d.id)).all():
                     shutil.rmtree(settings.runs_dir / a.id, ignore_errors=True)
                     db.delete(a)
-                _delete_dataset_files(d.id)
+                _delete_dataset_files(d.id, db)
                 db.delete(d)
         db.commit()
         purge_guests(db)
         for m in db.scalars(select(ModelRun).where(ModelRun.status.in_(["queued", "running"]))).all():
             m.status, m.error = "failed", "The server restarted while this model was training. Start it again."
         db.commit()
+    except Exception:
+        # Housekeeping must never stop the server from starting; it runs again on the next start.
+        db.rollback()
+        logging.getLogger(__name__).exception("Startup cleanup failed; continuing.")
     finally:
         db.close()
     yield
@@ -149,11 +153,17 @@ def agent_settings(db: Session, user: User) -> dict[str, Any]:
     return {**base, **(s.value if s else {})}
 
 
-def _delete_dataset_files(dataset_id: str) -> None:
+def _delete_dataset_files(dataset_id: str, db: Session | None = None) -> None:
     folder = (settings.uploads_dir / dataset_id).resolve()
     if settings.uploads_dir.resolve() in folder.parents and folder.exists():
         shutil.rmtree(folder)
     storage.forget_dataset(dataset_id)
+    if db is not None:
+        # Same session as the caller: a second connection would wait on the caller's open write transaction.
+        blob = db.get(DatasetBlob, dataset_id)
+        if blob is not None:
+            db.delete(blob)
+        return
     from .db import SessionLocal
     s = SessionLocal()
     try:
@@ -1272,7 +1282,7 @@ def _wipe_user(db: Session, uid: str) -> None:
         shutil.rmtree(settings.runs_dir / a.id, ignore_errors=True)
         db.delete(a)
     for d in db.scalars(select(Dataset).where(Dataset.owner_id == uid)).all():
-        _delete_dataset_files(d.id)
+        _delete_dataset_files(d.id, db)
         db.delete(d)
     for model in (Experiment, Project, EvaluationRun):
         for obj in db.scalars(select(model).where(model.owner_id == uid)).all():

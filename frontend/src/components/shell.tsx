@@ -201,6 +201,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => { try { setCollapsed(localStorage.getItem("if-sidebar") === "1"); } catch {} }, []);
   if (isPublicRoute(path)) return <>{children}</>;
+  if (error && !user && path === "/") {
+    // Visitors opening the site's main link always get the public home page, even if the server is still starting.
+    if (typeof window !== "undefined") window.location.replace("/welcome");
+    return null;
+  }
   if (error && !user) {
     return (
       <div className="flex h-screen items-center justify-center p-6">

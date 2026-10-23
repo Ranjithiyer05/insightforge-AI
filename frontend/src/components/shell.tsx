@@ -8,6 +8,7 @@ import {
   PlusCircle, Columns2, Search, Settings, Shield, Sun, Monitor, Cpu, Sparkles, X, FolderKanban, LayoutGrid,
 } from "lucide-react";
 import { Logo } from "./logo";
+import { Button } from "./ui/button";
 import { motion } from "./motion";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -195,11 +196,24 @@ function spotlight(e: React.PointerEvent) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  const { user, loading } = useAuth();
+  const { user, loading, error, retry } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => { try { setCollapsed(localStorage.getItem("if-sidebar") === "1"); } catch {} }, []);
   if (isPublicRoute(path)) return <>{children}</>;
+  if (error && !user) {
+    return (
+      <div className="flex h-screen items-center justify-center p-6">
+        <div className="max-w-md text-center">
+          <div className="hud-label">[ <b>Offline</b> ]</div>
+          <h1 className="mt-3 text-[26px] font-semibold text-fg">Can&apos;t reach the analysis server</h1>
+          <p className="mt-2 text-[14px] text-fg-2">{error}</p>
+          <p className="mt-2 text-[12.5px] text-fg-3">Retrying automatically every 10 seconds. On free hosting the first start can take a minute.</p>
+          <div className="mt-5 flex justify-center gap-2"><Button onClick={retry}>Retry now</Button><Button variant="secondary" asChild><Link href="/welcome">Go to the home page</Link></Button></div>
+        </div>
+      </div>
+    );
+  }
   if (loading || !user) {
     return <div className="flex h-screen items-center justify-center text-sm text-fg-3"><BarChart3 className="mr-2 size-4 animate-pulse" /> Loading workspace…</div>;
   }
